@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+**/*.py[cod]
+.pytest_cache/
+tests/
+requirements-dev.txt
+*.md
+!THIRD_PARTY_NOTICES.md

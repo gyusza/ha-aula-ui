@@ -1,0 +1,7 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "The Aula calendar endpoint is already configured."
+    }
+  }
+}

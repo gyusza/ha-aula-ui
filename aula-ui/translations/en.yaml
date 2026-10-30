@@ -1,0 +1,52 @@
+configuration:
+  timezone:
+    name: Timezone
+    description: IANA timezone used for dates, naps and the calendar, e.g. Europe/Copenhagen.
+  event_lookahead_days:
+    name: Calendar lookahead
+    description: Number of days ahead to fetch calendar events (1-120).
+  thread_pages:
+    name: History pages
+    description: Pages of conversations and 20-post batches imported per child (1-20).
+  log_level:
+    name: Log level
+    description: Logging verbosity shown in the app log.
+  log_color:
+    name: Colored logs
+    description: Color severity labels in the log; disable for plain text.
+  public_url:
+    name: Public URL
+    description: >-
+      Optional. Base URL where the app is published outside Home Assistant
+      (e.g. https://aula.example.com), used for notification deep links and the
+      calendar subscription URL. Leave empty when using only the sidebar panel.
+  access_team_domain:
+    name: Cloudflare Access team domain
+    description: Optional. e.g. myteam.cloudflareaccess.com. Only needed when publishing via Cloudflare Access.
+  access_aud:
+    name: Cloudflare Access AUD tag
+    description: Optional. Application Audience tag of the Cloudflare Access application.
+  access_allowed_emails:
+    name: Allowed emails
+    description: Optional. Email addresses allowed in through Cloudflare Access.
+  anthropic_api_key:
+    name: Anthropic API key
+    description: Optional AI fallback when Home Assistant AI Task is unavailable.
+  anthropic_model:
+    name: Anthropic model
+    description: Optional model override (default claude-haiku-4-5).
+  google_api_key:
+    name: Google Gemini API key
+    description: Optional AI fallback provider.
+  google_model:
+    name: Google model
+    description: Optional model override (default gemini-2.5-flash).
+  cloudflare_account_id:
+    name: Cloudflare Workers AI account ID
+    description: Optional AI fallback provider (used with the API token below).
+  cloudflare_api_token:
+    name: Cloudflare Workers AI API token
+    description: Optional AI fallback provider.
+  cloudflare_model:
+    name: Cloudflare model
+    description: Optional model override.

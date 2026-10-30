@@ -1,0 +1,10 @@
+{
+  "domain": "aula_calendar",
+  "name": "Aula Feed Calendar",
+  "version": "1.0.0",
+  "config_flow": true,
+  "documentation": "https://github.com/gyusza/ha-aula-ui",
+  "codeowners": [],
+  "iot_class": "local_push",
+  "requirements": []
+}

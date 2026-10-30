@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <base href="./">
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0e1113">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aula">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>Account setup · Aula family feed</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css"><script src="theme.js"></script><script src="pwa.js" defer></script><script src="account.js" defer></script>
+</head>
+<body>
+<main class="account-page">
+  <a class="brand" href="./" aria-label="Aula home"><img class="brand-mark" src="icon.svg" alt="" width="38" height="38"><span class="brand-name">aula<span class="brand-dot">.</span></span></a>
+  <a href="./#profiles" class="page-back">Back to Settings</a>
+  <h1>Aula account login</h1>
+  <p>The add-on connects directly to Aula and EasyIQ. Your Home Assistant login protects this page; the Aula/EasyIQ integrations are not used in direct mode.</p>
+  <p id="account-status" role="status"></p>
+  <p id="sync-status"></p>
+  <form id="connect-form" class="profile-form page-panel">
+    <h2>Connect Aula with MitID</h2>
+    <p>Enter your MitID username. We do not ask for your MitID password. Approve only this request in your MitID app and scan the animated QR code when shown.</p>
+    <label>MitID username<input name="username" autocomplete="off" maxlength="128" required></label>
+    <button class="action" type="submit">Start MitID login</button>
+  </form>
+  <section class="page-panel" id="login-progress" hidden>
+    <h2>MitID approval</h2>
+    <p id="login-status" role="status"></p>
+    <img id="qr" alt="Animated MitID approval QR code" hidden>
+    <div id="identities"></div>
+    <button class="action" id="cancel" type="button">Cancel login</button>
+  </section>
+  <section class="page-panel" id="children-panel" hidden>
+    <h2>Your children</h2><div id="children"></div>
+    <a href="./#profiles" class="page-back">Edit child profiles and calendar inclusion</a>
+  </section>
+  <div class="notice" id="error" role="alert" hidden></div>
+  <p>Reconnect the same guardian account if Aula asks you to log in again. Existing summaries, profiles, calendar decisions and subscription links are retained. No credentials are copied from the HA integrations.</p>
+</main>
+</body>
+</html>

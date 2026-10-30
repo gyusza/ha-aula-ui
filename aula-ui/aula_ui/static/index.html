@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <base href="./">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#0e1113">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Aula">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>Aula · Family feed</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+  <script src="ai-settings.js" defer></script>
+  <script src="siri.js" defer></script>
+  <script src="sync-settings.js" defer></script>
+  <script src="notifications.js" defer></script>
+  <script src="pwa.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-inner">
+      <a class="brand" href="#" aria-label="Aula home"><img class="brand-mark" src="icon.svg" alt="" width="38" height="38"><span class="brand-name">aula<span class="brand-dot">.</span></span></a>
+      <div class="search"><span id="search-icon" aria-hidden="true"></span><input id="search" type="search" placeholder="Search your family feed" aria-label="Search feed" autocomplete="off"><button id="search-clear" class="search-clear" type="button" aria-label="Clear search" hidden>×</button></div>
+      <div id="ai-progress" class="ai-progress" role="status" aria-live="polite" hidden></div>
+      <a class="icon-button bell-link" href="#history" aria-label="Notification history" title="Notification history"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/></svg><span class="bell-dot" hidden></span></a>
+      <a class="icon-button settings-link" href="#profiles" aria-label="Settings" title="Settings">⚙</a>
+    </div>
+  </header>
+  <aside id="install-banner" class="install-banner" aria-label="Install app" hidden>
+    <span class="install-text"></span>
+    <button class="action install-button" type="button" hidden>Install app</button>
+    <button class="action install-dismiss" type="button" aria-label="Dismiss install hint">✕</button>
+  </aside>
+  <main>
+    <div class="notice" id="notice" role="alert" hidden></div>
+    <div id="page" hidden></div>
+    <div id="timeline">
+    <div class="feed-heading"><h1 id="feed-title">Feed</h1><div class="heading-meta"><button id="calendar-toggle" class="action" type="button" aria-controls="calendar-side" aria-expanded="true" hidden>Hide calendar</button><a id="attention-count" class="unread-total" href="#attention" hidden></a></div></div>
+    <section id="presence" class="presence-strip" aria-label="Current presence" aria-live="polite" hidden></section>
+    <div id="sickness-status" class="sickness-status" role="status" hidden></div>
+    <section id="agenda-controls" class="agenda-controls" aria-label="Calendar date navigation" hidden>
+      <button id="agenda-previous" class="agenda-nav" type="button" aria-label="Previous 14 days">←</button>
+      <label class="agenda-date-label">Date range
+        <span class="agenda-date-picker">
+          <span id="agenda-range" class="agenda-range" aria-live="polite"></span>
+          <input id="agenda-date" type="date" aria-label="Calendar focus date" aria-describedby="agenda-range">
+        </span>
+      </label>
+      <button id="agenda-today" class="agenda-nav agenda-today" type="button">Today</button>
+      <button id="agenda-next" class="agenda-nav" type="button" aria-label="Next 14 days">→</button>
+    </section>
+    <details class="type-filters">
+      <summary id="type-filter-summary">Filters · Everyone</summary>
+      <div id="future-filters" hidden>
+        <label class="future-label">Event dates
+          <select id="future-events" aria-label="Future events">
+            <option value="all">Show all events</option>
+            <option value="hide">Hide future events</option>
+            <option value="only">Only future events</option>
+          </select>
+        </label>
+      </div>
+      <p class="filter-label">Content types</p>
+      <div id="type-filters" class="type-options" role="group" aria-label="Filter by content type"></div>
+    </details>
+    <p class="sync" id="sync" role="status">Connecting to Aula…</p>
+    <section id="feed" aria-label="Chronological family feed" aria-live="polite"></section>
+    <button id="more" class="load-more" hidden>Show more posts</button>
+    </div>
+    <aside id="calendar-side" class="calendar-side" aria-label="Calendar" hidden>
+      <div class="calendar-side-heading"><h2>Calendar</h2><button id="calendar-hide" class="action" type="button" aria-label="Hide calendar sidebar">← Hide</button></div>
+      <div id="side-controls"></div>
+      <details class="type-filters side-filters">
+        <summary id="side-filter-summary">Filters</summary>
+        <div id="side-future"></div>
+        <p class="filter-label">Event types</p>
+        <div id="side-type-filters" class="type-options" role="group" aria-label="Filter calendar by type"></div>
+      </details>
+      <section id="side-agenda" aria-live="polite"></section>
+      <button id="side-more" class="load-more" type="button" hidden>Show more events</button>
+      <p id="side-sync" class="sync" role="status"></p>
+    </aside>
+  </main>
+  <nav class="bottom-nav" aria-label="Feed navigation">
+    <button data-tab="home" class="nav-button active" aria-pressed="true"><span class="nav-icon"></span>Feed</button>
+    <button data-tab="calendar" class="nav-button" aria-pressed="false"><span class="nav-icon"></span>Calendar</button>
+    <button data-tab="saved" class="nav-button" aria-pressed="false"><span class="nav-icon"></span>Saved</button>
+  </nav>
+</body>
+</html>

@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+*.egg-info/
+.aula-addon-login-browser-*/
+node_modules/
+.DS_Store
