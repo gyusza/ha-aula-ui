@@ -76,3 +76,8 @@ No test uses a real MitID identity.
 Authentication and calendar helpers are vendored from
 [esbenwiberg/easyiq](https://github.com/esbenwiberg/easyiq) (MIT); see
 [THIRD_PARTY_NOTICES.md](aula-ui/THIRD_PARTY_NOTICES.md).
+
+## License
+
+[MIT](LICENSE). Vendored third-party code keeps its own licence; see
+[THIRD_PARTY_NOTICES.md](aula-ui/THIRD_PARTY_NOTICES.md).
