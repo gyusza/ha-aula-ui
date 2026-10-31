@@ -2445,6 +2445,9 @@ async function route(restoreFromHistory = false) {
       const notifyLink = el("a", "profile-link", "Notifications ›");
       notifyLink.href = "#notifications";
       container.append(notifyLink);
+      const mcpLink = el("a", "profile-link", "MCP connector ›");
+      mcpLink.href = "#mcp-settings";
+      container.append(mcpLink);
       const syncLink = el("a", "profile-link", "Sync ›");
       syncLink.href = "#sync-settings";
       container.append(syncLink);
@@ -2456,6 +2459,41 @@ async function route(restoreFromHistory = false) {
       const mount = el("section", "page-panel");
       container.append(mount);
       window.AulaSyncSettings?.render(mount);
+      return;
+    }
+    if (key === "mcp-settings") {
+      const container = pageShell("MCP connector", "#profiles");
+      const panel = el("section", "page-panel");
+      panel.append(el("h2", "", "MCP connector"));
+      if (!data.mcp_enabled) {
+        panel.append(el("p", "profile-status",
+          "MCP is disabled. Set mcp_key in the Home Assistant add-on configuration to enable it."));
+      } else {
+        const url = data.mcp_url || new URL(data.mcp_path.replace(/^\/+/, ""), appBase).href;
+        const input = el("input", "calendar-url");
+        input.type = "text";
+        input.readOnly = true;
+        input.value = url;
+        input.setAttribute("aria-label", "MCP connector URL");
+        panel.append(input);
+        const copy = action("saved", "Copy MCP URL", async () => {
+          try {
+            await navigator.clipboard.writeText(url);
+            copy.querySelector("span").textContent = "Copied";
+          } catch (error) {
+            input.select();
+            setNotice("Could not copy automatically. Select and copy the MCP URL.");
+          }
+        });
+        panel.append(copy);
+        panel.append(el("p", "profile-status",
+          "This URL contains the MCP access key. Keep it private. Add it as the endpoint in your MCP client."));
+        if (!data.mcp_url) panel.append(el("p", "notice",
+          "This Home Assistant ingress URL may be temporary. Set public_url in the add-on configuration for a stable external connector URL."));
+        if (data.mcp_allow_writes) panel.append(el("p", "notice",
+          "MCP write tools are enabled, including reporting sickness. Disable mcp_allow_writes in add-on options for read-only access."));
+      }
+      container.append(panel);
       return;
     }
     if (key === "notifications") {

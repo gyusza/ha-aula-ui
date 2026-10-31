@@ -343,6 +343,11 @@ removed; an existing non-default value is migrated once into Full sync.
 The settings gear contains account login, child profiles and calendar
 subscription preferences, not an archive or review queue.
 
+The MCP connector URL is available in **Settings → MCP connector** after
+setting `mcp_key` in the add-on options. Treat the URL as a password. For a
+stable external URL, also configure `public_url` and Cloudflare Access as
+described in `CLOUDFLARE_ACCESS.md`.
+
 Each child's display name, school/daycare type and subscription inclusion are
 stored on the add-on and shared across devices. Display names do not change
 source identity matching. Set **timezone** once in Home Assistant's

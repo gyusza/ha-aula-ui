@@ -673,6 +673,34 @@ async def retired_siri_settings(browser, url):
         await page.close()
 
 
+async def mcp_settings(browser, url):
+    page = await browser.new_page(viewport={"width": 390, "height": 844})
+    key = "k" * 43
+    settings = {
+        "children": [], "calendar_path": "/api/aula_calendar/fixture.ics", "calendar_url": "",
+        "mcp_enabled": True, "mcp_path": f"/mcp/{key}",
+        "mcp_url": f"https://aula.example/mcp/{key}", "mcp_allow_writes": True,
+        "calendar_count": 0, "calendar_categories": [], "calendar_error": "",
+        "events": [], "archived_events": [], "recommendations": [],
+        "declined_recommendations": [], "extraction_available": True, "recognition_warnings": [],
+    }
+
+    async def profiles(route):
+        await route.fulfill(json=settings)
+
+    await page.route("**/api/profiles", profiles)
+    try:
+        await page.goto(url + "#profiles", wait_until="networkidle")
+        await page.locator('a[href="#mcp-settings"]').click()
+        await page.get_by_label("MCP connector URL").wait_for()
+        assert await page.get_by_label("MCP connector URL").input_value() == settings["mcp_url"]
+        assert await page.get_by_role("button", name="Copy MCP URL").count() == 1
+        assert await page.get_by_text("MCP write tools are enabled", exact=False).is_visible()
+        assert await page.get_by_text("Siri & Shortcuts", exact=True).count() == 0
+    finally:
+        await page.close()
+
+
 async def sickness_reporting(browser, url):
     page = await browser.new_page(viewport={"width": 390, "height": 844})
     writes = []
@@ -1733,6 +1761,7 @@ async def verify():
                     await installed_ios_download(browser, url)
                     await post_photo_grid(browser, url)
                     await album_tagging(browser, url)
+                    await mcp_settings(browser, url)
                     await sickness_reporting(browser, url)
                     await retired_siri_settings(browser, url)
                     await sync_settings_page(browser, url)

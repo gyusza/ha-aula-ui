@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.59
+
+- Added an MCP connector entry to Settings with the configured endpoint URL and
+  a copy action. Warn when the key is disabled, ingress URL is temporary, or
+  MCP write tools are enabled.
+
 ## 1.9.58
 
 - Removed the retired Siri connector from Settings, the API and cached assets.

@@ -123,3 +123,21 @@ def test_disabled_without_key(controller):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_settings_api_exposes_configured_mcp_connector_url(controller):
+    object.__setattr__(controller.config, "mcp_key", KEY)
+    object.__setattr__(controller.config, "public_url", "https://aula.example")
+    object.__setattr__(controller.config, "mcp_allow_writes", True)
+    server = start_server(controller, port=0, allowed_ip="127.0.0.1")
+    try:
+        response = requests.get(f"http://127.0.0.1:{server.server_port}/api/profiles", timeout=5)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["mcp_enabled"] is True
+        assert data["mcp_path"] == f"/mcp/{KEY}"
+        assert data["mcp_url"] == f"https://aula.example/mcp/{KEY}"
+        assert data["mcp_allow_writes"] is True
+    finally:
+        server.shutdown()
+        server.server_close()

@@ -389,12 +389,19 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                 self._send(json.dumps(data).encode(), "application/json; charset=utf-8")
                 return
             if path == "/api/profiles":
+                mcp_key = getattr(controller.config, "mcp_key", "")
+                mcp_path = f"/mcp/{mcp_key}" if mcp_key else ""
+                public_url = getattr(controller.config, "public_url", "")
                 self._send(json.dumps({
                     "children": controller.profiles.snapshot(),
                     "calendar_path": controller.profiles.calendar_path,
                     "calendar_url": (getattr(controller.config, "public_url", "") +
                                      controller.profiles.calendar_path
                                      if getattr(controller.config, "public_url", "") else ""),
+                    "mcp_enabled": bool(mcp_key),
+                    "mcp_path": mcp_path,
+                    "mcp_url": public_url + mcp_path if public_url and mcp_path else "",
+                    "mcp_allow_writes": bool(getattr(controller.config, "mcp_allow_writes", False)),
                     "calendar_count": controller.calendar.count,
                     "calendar_categories": controller.calendar.categories(),
                     "calendar_error": controller.calendar.error or controller.calendar_bridge_error,
