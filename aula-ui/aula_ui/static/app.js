@@ -2445,9 +2445,9 @@ async function route(restoreFromHistory = false) {
       const notifyLink = el("a", "profile-link", "Notifications ›");
       notifyLink.href = "#notifications";
       container.append(notifyLink);
-      const siriLink = el("a", "profile-link", "Siri & Shortcuts ›");
-      siriLink.href = "#siri-settings";
-      container.append(siriLink);
+      const mcpLink = el("a", "profile-link", "MCP connector ›");
+      mcpLink.href = "#mcp-settings";
+      container.append(mcpLink);
       const syncLink = el("a", "profile-link", "Sync ›");
       syncLink.href = "#sync-settings";
       container.append(syncLink);
@@ -2461,11 +2461,50 @@ async function route(restoreFromHistory = false) {
       window.AulaSyncSettings?.render(mount);
       return;
     }
-    if (key === "siri-settings") {
-      const container = pageShell("Siri & Shortcuts", "#profiles");
-      const mount = el("section", "page-panel");
-      container.append(mount);
-      window.AulaSiriSettings?.render(mount);
+    if (key === "mcp-settings") {
+      const container = pageShell("MCP connector", "#profiles");
+      const panel = el("section", "page-panel");
+      panel.append(el("h2", "", "Connect an MCP client"));
+      panel.append(el("p", "profile-status",
+        "The MCP server runs inside this add-on and uses the same Aula session and cached feed. " +
+        "Requests are protected by Home Assistant ingress or Cloudflare Access; no connector key is issued."));
+      if (data.mcp_url) {
+        const label = el("label", "", "Cloudflare Access endpoint");
+        const endpoint = el("input");
+        endpoint.type = "url";
+        endpoint.readOnly = true;
+        endpoint.value = data.mcp_url;
+        endpoint.setAttribute("aria-label", "Cloudflare Access endpoint");
+        const copy = el("button", "action", "Copy endpoint");
+        copy.type = "button";
+        const status = el("p", "profile-status");
+        status.setAttribute("role", "status");
+        copy.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(endpoint.value);
+            status.textContent = "Endpoint copied.";
+          } catch {
+            endpoint.select();
+            status.textContent = "Select and copy the endpoint.";
+          }
+        });
+        label.append(endpoint);
+        panel.append(label, copy, status);
+        panel.append(el("p", "profile-status",
+          "Configure your MCP client to connect to this URL and complete the Cloudflare Access sign-in. " +
+          "Keep the whole endpoint behind the existing Access application; do not add a bypass rule."));
+      } else {
+        panel.append(el("p", "profile-status",
+          "No public URL is configured. The endpoint is /mcp inside this add-on's Home Assistant ingress; " +
+          "use a client that can access an authenticated Home Assistant ingress session. To connect a remote " +
+          "MCP client, configure this add-on's existing Cloudflare Access custom domain in App settings."));
+      }
+      panel.append(el("h3", "", "Available tools"));
+      panel.append(el("p", "profile-status",
+        "Read cached feed items and full threads, check calendar and presence, inspect albums and attachments, " +
+        "view sickness status, and queue a refresh. Reporting or withdrawing sickness is an explicit write; " +
+        "the client must ask for your confirmation and the add-on checks Aula permissions and today's date."));
+      container.append(panel);
       return;
     }
     if (key === "notifications") {

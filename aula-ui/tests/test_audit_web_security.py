@@ -113,18 +113,20 @@ def test_failed_jwks_fetch_is_throttled_and_nested_tokens_rejected():
     assert verifier.verify(f"{nested}.e30.c2ln") is None
 
 
-def test_siri_sick_status_for_child_missing_from_aula_status_is_not_found(tmp_path):
-    from aula_ui.siri import SiriConnector
+def test_mcp_cannot_report_sickness_for_child_missing_from_aula_status(tmp_path):
+    from aula_ui.mcp import AulaMCP
     from test_controller import FakeHA, TWO_CHILDREN, build_controller
 
     controller = build_controller(tmp_path, FakeHA(), children=TWO_CHILDREN)
     sick = SimpleNamespace(snapshot=lambda: {
         "date": "2026-10-29", "valid_until": "", "notice": "",
-        "children": [{"slug": "alma", "name": "Alma", "sick": False, "can_report": True}]})
-    siri = SiriConnector(controller, sick)
-    assert siri.command({"action": "sick_status", "child": "alma"})["sick"] is False
+        "children": [{"slug": "alma", "name": "Alma", "sick": False, "can_report": True}]},
+        report=lambda *args: pytest.fail("unknown child must not be reported"))
+    mcp = AulaMCP(controller, sick)
     with pytest.raises(LookupError):
-        siri.command({"action": "sick_status", "child": "noah"})
+        mcp.call_tool("report_sickness", {
+            "child": "noah", "date": "2026-10-29", "confirmed": True,
+        }, "HA")
 
 
 def test_notification_job_queued_while_worker_times_out_is_still_delivered(tmp_path):

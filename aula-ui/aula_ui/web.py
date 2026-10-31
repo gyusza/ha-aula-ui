@@ -16,12 +16,13 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, quote
 from .aula_api import AulaApiError, _call, fetch_thread_messages
 from . import gallery
-from .media import attachments, download_attachment
+from .media import attachments, download_attachment, feed_attachment
 import requests
 from .diagnostics import TRACE, correlation, describe
 from . import notifications
 from .access import AccessVerifier
 from . import __version__
+from .mcp import AulaMCP, MCPProtocolError, MCP_PROTOCOL_VERSIONS
 
 _LOGGER = logging.getLogger(__name__)
 STATIC = Path(__file__).with_name("static")
@@ -58,9 +59,8 @@ def _reading_item(controller: Any, item_id: str) -> dict | None:
 def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP,
                  access: AccessVerifier | None = None) -> ThreadingHTTPServer:
     from .sickness import SickDays
-    from .siri import SiriConnector
     sick_days = SickDays(controller)
-    siri = SiriConnector(controller, sick_days)
+    mcp = AulaMCP(controller, sick_days)
     class Handler(BaseHTTPRequestHandler):
         timeout = REQUEST_TIMEOUT
         server_version = "AulaUI"
@@ -78,7 +78,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     known = {"/", "/account", "/calendar.ics", "/api/feed", "/api/account",
                              "/api/profiles", "/api/ai-settings", "/api/feed/reprocess", "/api/feed/reading",
                              "/api/feed/attachment", "/api/feed/media", "/api/sickness",
-                             "/api/siri/settings", "/api/siri/command", "/siri.js",
+                             "/mcp",
                              "/api/sync-settings", "/sync-settings.js",
                              "/api/notifications", "/api/notifications/test", "/api/notifications/history",
                              "/api/notifications/read", "/notifications.js",
@@ -202,15 +202,15 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             if not self._authorized():
                 return
             path = self.path.split("?", 1)[0]
+            if path == "/mcp":
+                self._mcp_method_not_allowed()
+                return
             if path == "/api/version":
                 self._send(json.dumps({"version": __version__}).encode(), "application/json; charset=utf-8")
                 return
             if path == "/api/whoami":
                 self._send(json.dumps({"user": getattr(self, "_identity", "")}).encode(),
                            "application/json; charset=utf-8")
-                return
-            if path == "/api/siri/settings":
-                self._send(json.dumps(siri.settings()).encode(), "application/json")
                 return
             if path == "/api/sickness":
                 try:
@@ -274,31 +274,10 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     return
                 try:
                     index = int(query.get("index", [""])[0])
-                    if index < 0:
-                        raise ValueError("Invalid attachment index")
                     message_id = query.get("message", [""])[0]
-                    media = item.get("attachments", [])
-                    if message_id:
-                        if not item_id.startswith("thread:") or not any(
-                                str(message.get("id")) == message_id for message in item.get("thread_messages", [])):
-                            raise ValueError("Message unavailable")
-                        messages = fetch_thread_messages(controller.source_client, item_id.removeprefix("thread:"))
-                        message = next((row for row in messages if str(row.get("id")) == message_id), None)
-                        if message is None:
-                            raise ValueError("Message unavailable")
-                        media = message.get("attachments", [])
-                    elif item_id.startswith("post:"):
-                        raw = _call(controller.source_client, "?" + urlencode({
-                            "method": "posts.getById", "id": item_id.removeprefix("post:"),
-                        })).get("data")
-                        if not isinstance(raw, dict):
-                            raise AulaApiError("Aula returned no post details")
-                        content = raw.get("content") or {}
-                        media = attachments(raw, content.get("html", "") if isinstance(content, dict) else content)
-                    if index >= len(media):
-                        raise ValueError("Attachment unavailable")
-                    attachment = media[index]
-                    data, content_type = download_attachment(attachment)
+                    attachment, data, content_type = feed_attachment(
+                        controller.source_client, item, item_id, index, message_id,
+                        fetch_messages=fetch_thread_messages, call=_call, download=download_attachment)
                 except (ValueError, AulaApiError, requests.RequestException) as error:
                     _LOGGER.warning("event=media.download_failed error_type=%s", type(error).__name__)
                     self._send(b'{"error":"Attachment could not be opened. It may be unavailable, protected, or larger than 25 MB. Open the source in Aula."}',
@@ -359,6 +338,8 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     "calendar_url": (getattr(controller.config, "public_url", "") +
                                      controller.profiles.calendar_path
                                      if getattr(controller.config, "public_url", "") else ""),
+                    "mcp_url": (getattr(controller.config, "public_url", "").rstrip("/") + "/mcp"
+                                if getattr(controller.config, "public_url", "") else ""),
                     "calendar_count": controller.calendar.count,
                     "calendar_categories": controller.calendar.categories(),
                     "calendar_error": controller.calendar.error or controller.calendar_bridge_error,
@@ -415,7 +396,6 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                 "/": ("index.html", "text/html"),
                 "/app.js": ("app.js", "text/javascript"),
                 "/ai-settings.js": ("ai-settings.js", "text/javascript"),
-                "/siri.js": ("siri.js", "text/javascript"),
                 "/sync-settings.js": ("sync-settings.js", "text/javascript"),
                 "/notifications.js": ("notifications.js", "text/javascript"),
                 "/style.css": ("style.css", "text/css"),
@@ -434,69 +414,75 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             else:
                 self._send_static((STATIC / filename).read_bytes(), mime + "; charset=utf-8")
 
-        def _siri_command(self) -> None:
-            self._ingress = self.client_address[0] == allowed_ip
-            authorization = self.headers.get("Authorization", "")
-            token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
-            if not controller.profiles.verify_siri_key(token):
-                self._send(b'{"error":"Siri key is missing, invalid or revoked","speech":"Siri key is missing, invalid or revoked"}', "application/json", 401)
+        def _mcp_method_not_allowed(self) -> None:
+            self._send(b'{"error":"Use POST for MCP requests"}', "application/json", 405,
+                       extra_headers={"Allow": "POST"})
+
+        def _mcp_request(self) -> None:
+            origin = self.headers.get("Origin")
+            host = self.headers.get("Host", "").casefold()
+            if origin:
+                try:
+                    from urllib.parse import urlsplit
+                    parsed = urlsplit(origin)
+                    if (parsed.scheme not in ("http", "https") or not parsed.netloc
+                            or parsed.netloc.casefold() != host or parsed.path not in ("", "/")
+                            or (not self._ingress and parsed.scheme != "https")
+                            or parsed.query or parsed.fragment or parsed.username or parsed.password):
+                        self.send_error(403, "Origin not allowed")
+                        return
+                except ValueError:
+                    self.send_error(403, "Origin not allowed")
+                    return
+            if self.headers.get_content_type() != "application/json":
+                self.send_error(415, "Content-Type must be application/json")
                 return
-            if not siri.admit():
-                self._send(b'{"error":"Too many Siri requests. Wait a minute.","speech":"Too many Siri requests. Wait a minute."}', "application/json", 429)
+            protocol_header = self.headers.get("MCP-Protocol-Version")
+            if protocol_header and protocol_header not in MCP_PROTOCOL_VERSIONS:
+                self.send_error(400, "Unsupported MCP protocol version")
                 return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 1024:
-                    raise ValueError("Supply a JSON command (maximum 1024 bytes)")
-                result = siri.command(json.loads(self.rfile.read(length)))
-            except (ValueError, UnicodeDecodeError) as error:
-                self._send(json.dumps({"error": str(error), "speech": str(error)}).encode(), "application/json", 400)
+                if not 0 < length <= 1024 * 1024:
+                    raise ValueError("Request body must be between 1 byte and 1 MB")
+                request = json.loads(self.rfile.read(length))
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                body = json.dumps({
+                    "jsonrpc": "2.0", "id": None,
+                    "error": {"code": -32700, "message": str(error)},
+                }).encode()
+                self._send(body, "application/json", 400)
                 return
-            except PermissionError as error:
-                self._send(json.dumps({"error": str(error), "speech": str(error)}).encode(), "application/json", 403)
+            try:
+                response, status = mcp.handle(request, getattr(self, "_identity", ""))
+            except MCPProtocolError as error:
+                body = json.dumps({
+                    "jsonrpc": "2.0", "id": None,
+                    "error": {"code": error.code, "message": str(error)},
+                }).encode()
+                self._send(body, "application/json", 400)
                 return
-            except LookupError as error:
-                self._send(json.dumps({"error": str(error), "speech": str(error)}).encode(), "application/json", 404)
+            if response is None:
+                self.send_response(status)
+                self.send_header("Content-Length", "0")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("MCP-Protocol-Version", protocol_header or MCP_PROTOCOL_VERSIONS[0])
+                self.end_headers()
                 return
-            except AulaApiError as error:
-                _LOGGER.warning("Siri command could not be completed: %s", describe(error))
-                message = "Aula could not confirm this action. Check the app before retrying."
-                self._send(json.dumps({"error": str(error), "speech": message}).encode(), "application/json", 502)
-                return
-            self._send(json.dumps(result).encode(), "application/json")
+            version = (response.get("result") or {}).get("protocolVersion") or protocol_header or MCP_PROTOCOL_VERSIONS[0]
+            self._send(json.dumps(response, ensure_ascii=False).encode(), "application/json", status,
+                       extra_headers={"MCP-Protocol-Version": version})
 
         def do_POST(self) -> None:
-            if self.path.split("?", 1)[0] == "/api/siri/command":
-                self._siri_command()
-                return
             if not self._authorized():
+                return
+            if self.path.split("?", 1)[0] == "/mcp":
+                self._mcp_request()
                 return
             # A same-origin non-simple header prevents cross-origin requests
             # from initiating work through an authenticated ingress session.
             if self.headers.get("X-Aula-Request") not in ("refresh", "settings"):
                 self.send_error(403)
-                return
-            if self.path == "/api/siri/settings":
-                if self.headers.get("X-Aula-Request") != "settings":
-                    self.send_error(403)
-                    return
-                try:
-                    length = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < length <= 128:
-                        raise ValueError("Choose generate or revoke")
-                    value = json.loads(self.rfile.read(length))
-                    if (not isinstance(value, dict) or set(value) != {"action"}
-                            or value["action"] not in ("generate", "revoke")):
-                        raise ValueError("Choose generate or revoke")
-                    token = controller.profiles.set_siri_key(value["action"] == "generate")
-                except (ValueError, UnicodeDecodeError) as error:
-                    self._send(json.dumps({"error": str(error)}).encode(), "application/json", 400)
-                    return
-                except OSError:
-                    _LOGGER.error("Siri key could not be saved")
-                    self._send(b'{"error":"Siri key could not be saved"}', "application/json", 500)
-                    return
-                self._send(json.dumps({**siri.settings(), "key": token}).encode(), "application/json")
                 return
             if self.path == "/api/sickness":
                 if self.headers.get("X-Aula-Request") != "settings":
@@ -816,6 +802,14 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                 return
             controller.request_refresh()
             self._send(b'{"queued":true}', "application/json", 202)
+
+        def do_DELETE(self) -> None:
+            if not self._authorized():
+                return
+            if self.path.split("?", 1)[0] == "/mcp":
+                self._mcp_method_not_allowed()
+                return
+            self.send_error(404)
 
         def log_message(self, fmt: str, *args: Any) -> None:
             # Base handler messages contain raw request lines and query strings.
