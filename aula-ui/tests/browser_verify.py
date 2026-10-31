@@ -794,8 +794,8 @@ async def album_tagging(browser, url):
         "date": "2026-10-26T20:27:00Z", "summary": "Bicycle trip.", "original_text": "Tur",
         "children": [], "child_slugs": [], "album": {"id": "77", "thumbs": 0},
     }
-    photo = {"id": "1", "type": "image", "name": "photo.jpg",
-             "can_edit_tags": True, "tagged_children": []}
+    photos = [{"id": str(n), "type": "image", "name": f"photo{n}.jpg",
+               "can_edit_tags": True, "tagged_children": []} for n in (1, 2)]
     writes = []
     fail = False
 
@@ -806,35 +806,79 @@ async def album_tagging(browser, url):
         if fail:
             await route.fulfill(status=502, json={"error": "Aula rejected this tag"})
         else:
+            photo = next(photo for photo in photos if photo["id"] == value["media"])
             photo["tagged_children"] = ["maja"] if value["tagged"] else []
             await route.fulfill(json=photo)
 
     await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [item], "children": []}))
     await page.route("**/api/gallery/album?*", lambda route: route.fulfill(json={
-        "id": "77", "count": 1, "media": [photo], "tag_choices": [{"slug": "maja", "name": "Maja"}],
+        "id": "77", "count": 2, "media": photos, "tag_choices": [{"slug": "maja", "name": "Maja"}],
     }))
     await page.route("**/api/gallery/image?*", lambda route: route.fulfill(status=404, body=""))
     await page.route("**/api/gallery/tag", write)
     try:
         await page.goto(url + "#post/album%3A77", wait_until="networkidle")
-        button = page.locator(".album-tag")
-        await button.wait_for()
+        bar = page.locator(".album-tag-bar")
+        await bar.wait_for()
+        button = bar.locator(".album-tag")
+        assert await button.count() == 1 and await button.is_disabled()
+        assert await page.locator(".album-select").count() == 2
         assert writes == []
-        assert await button.get_attribute("aria-pressed") == "false"
+        await page.get_by_role("button", name="Select photo1.jpg", exact=True).click()
+        assert await button.inner_text() == "Tag Maja (1)"
+        await bar.get_by_role("button", name="Select all", exact=True).click()
+        await bar.get_by_text("2 selected", exact=True).wait_for()
         await button.click()
-        await page.wait_for_function("() => document.querySelector('.album-tag').getAttribute('aria-pressed') === 'true'")
-        assert writes == [{"album": "77", "media": "1", "child": "maja", "tagged": True}]
+        await bar.get_by_text("Tagged Maja in 2 photos in Aula.", exact=True).wait_for()
+        assert [(w["media"], w["tagged"]) for w in writes] == [("1", True), ("2", True)]
+        assert await page.locator(".album-tag-badge").count() == 2
+        assert await page.locator(".album-select[aria-pressed=true]").count() == 0
+        await page.get_by_role("button", name="Select photo2.jpg", exact=True).click()
+        assert await button.inner_text() == "Untag Maja (1)"
         await button.click()
-        await page.wait_for_function("() => document.querySelector('.album-tag').getAttribute('aria-pressed') === 'false'")
-        assert writes[-1]["tagged"] is False
+        await bar.get_by_text("Removed Maja from 1 photo in Aula.", exact=True).wait_for()
+        assert writes[-1] == {"album": "77", "media": "2", "child": "maja", "tagged": False}
+        assert await page.locator(".album-tag-badge").count() == 1
         fail = True
+        await page.get_by_role("button", name="Select photo2.jpg", exact=True).click()
         await button.click()
-        await page.get_by_text("Tag not confirmed: Aula rejected this tag").wait_for()
-        assert await button.get_attribute("aria-pressed") == "false"
-        photo["can_edit_tags"] = False
+        await bar.get_by_text("Tag not confirmed for 1 photo: Aula rejected this tag", exact=False).wait_for()
+        assert await page.locator(".album-select[aria-pressed=true]").count() == 1
+        assert await page.locator(".album-tag-badge").count() == 1
+        fail = False
+        await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
+        viewer = page.get_by_role("dialog")
+        tag = viewer.get_by_role("button", name="Remove tag for Maja", exact=True)
+        await tag.wait_for()
+        assert await tag.get_attribute("aria-pressed") == "true"
+        geometry = await page.evaluate("""() => {
+            const box = selector => document.querySelector(selector).getBoundingClientRect();
+            return {close: box('.image-viewer-toolbar .image-viewer-close'), nav: box('.image-viewer-actions'),
+                    share: box('.image-viewer-share'), tag: box('.image-viewer-tag'),
+                    content: box('.image-viewer-content'), width: innerWidth, height: innerHeight};
+        }""")
+        assert geometry["close"]["right"] > geometry["width"] - 30 and geometry["close"]["top"] < 60
+        assert geometry["close"]["height"] <= 40 and geometry["share"]["height"] <= 40
+        nav_mid = geometry["nav"]["left"] + geometry["nav"]["width"] / 2
+        assert abs(nav_mid - geometry["width"] / 2) < 4
+        assert geometry["share"]["top"] > geometry["content"]["bottom"] - 1
+        assert geometry["tag"]["top"] > geometry["content"]["bottom"] - 1
+        await tag.click()
+        await viewer.get_by_role("button", name="Tag Maja", exact=True).wait_for()
+        await viewer.get_by_text("Tag removed in Aula.", exact=True).wait_for()
+        assert writes[-1] == {"album": "77", "media": "1", "child": "maja", "tagged": False}
+        await page.keyboard.press("ArrowRight")
+        await viewer.get_by_role("button", name="Tag Maja", exact=True).wait_for()
+        await page.keyboard.press("Escape")
+        assert await page.locator(".album-tag-badge").count() == 0
+        for photo in photos:
+            photo["can_edit_tags"] = False
         await page.reload(wait_until="networkidle")
-        assert await page.locator(".album-tag").count() == 0
         await page.get_by_text("Aula does not allow your account to edit tags in this album.").wait_for()
+        assert await page.locator(".album-tag, .album-select, .album-tag-bar").count() == 0
+        await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
+        await page.get_by_role("dialog").get_by_role("button", name="Close", exact=True).wait_for()
+        assert await page.locator(".image-viewer-tag").count() == 0
     finally:
         await page.close()
 
@@ -1080,8 +1124,8 @@ async def media_details(page, url, controller):
     close = page.get_by_role("dialog").get_by_role("button", name="Close", exact=True)
     assert await close.evaluate("""button => {
         const rect = button.getBoundingClientRect();
-        return rect.top >= 59 && rect.bottom <= innerHeight && rect.height >= 44 &&
-            document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === button;
+        return rect.top >= 59 && rect.bottom <= innerHeight && rect.height >= 32 &&
+            button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
     }""")
     await page.get_by_role("dialog").get_by_role("button", name="Close", exact=True).click()
     await page.wait_for_function("() => !document.querySelector('.image-viewer')")

@@ -100,6 +100,7 @@ class TagClient(Client):
     def __init__(self):
         super().__init__([{
             **photo(1), "currentUserCanEditTags": True,
+            "title": "Bike trip", "description": "Forest day",
             "tags": [{"id": 900, "profileId": 901}],
         }])
         self.writes = []
@@ -112,15 +113,12 @@ class TagClient(Client):
             payload["service_response"]["data"]["album"] = ALBUM
         return payload
 
-    def post(self, uri, data):
-        self.writes.append((uri, data))
+    def update_media_tags(self, media_id, tag_ids, title, description):
+        self.writes.append((media_id, list(tag_ids), title, description))
         if self.accept and self.persist:
-            tags = self.media[0]["tags"]
-            if "addTag" in uri:
-                tags.append({"id": data["instProfileId"], "profileId": 2})
-            else:
-                self.media[0]["tags"] = [tag for tag in tags if tag["id"] != data["instProfileId"]]
-        return {"status": {"code": 0}, "data": self.accept}
+            known = {tag["id"]: tag for tag in self.media[0]["tags"]}
+            self.media[0]["tags"] = [known.get(tag, {"id": tag, "profileId": 2}) for tag in tag_ids]
+        return {"status": {"code": 0 if self.accept else 1}, "data": None}
 
 
 def test_album_reports_tag_permissions_and_configured_children_only():
@@ -136,12 +134,13 @@ def test_tag_add_remove_are_confirmed_and_preserve_other_people():
     client = TagClient()
     result = gallery.set_child_tag(client, [CHILD], "77", "1", "maja", True)
     assert result["tagged_children"] == ["maja"]
-    assert client.writes == [("?method=gallery.addTag", {"mediaId": 1, "instProfileId": 20})]
+    assert client.writes == [(1, [900, 20], "Bike trip", "Forest day")]
     gallery.set_child_tag(client, [CHILD], "77", "1", "maja", True)
     assert len(client.writes) == 1
     result = gallery.set_child_tag(client, [CHILD], "77", "1", "maja", False)
     assert result["tagged_children"] == []
     assert client.media[0]["tags"] == [{"id": 900, "profileId": 901}]
+    assert client.writes[-1] == (1, [900], "Bike trip", "Forest day")
 
 
 def test_tag_requires_permission_and_exact_configured_child():

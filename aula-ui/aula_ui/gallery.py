@@ -191,7 +191,7 @@ def set_child_tag(client: Any, children: Any, album_id: str, media_id: str,
             or not isinstance(media_id, str) or not media_id.isdigit()
             or not isinstance(child_slug, str) or not isinstance(tagged, bool)):
         raise ValueError("Supply an album, photo, child and tagged boolean")
-    if not callable(getattr(client, "post", None)):
+    if not callable(getattr(client, "update_media_tags", None)):
         raise AulaApiError("Photo tagging needs the add-on's own Aula login")
     with _tag_lock:
         with _lock:
@@ -209,14 +209,24 @@ def set_child_tag(client: Any, children: Any, album_id: str, media_id: str,
         present = any(isinstance(tag, dict) and str(tag.get("id")) == choice["institution_profile_id"]
                       for tag in row.get("tags") or [])
         if present != tagged:
-            method = "gallery.addTag" if tagged else "gallery.removeTag"
-            payload = client.post("?" + urlencode({"method": method}), {
-                "mediaId": int(media_id), "instProfileId": int(choice["institution_profile_id"]),
-            })
+            target = int(choice["institution_profile_id"])
+            tag_ids = []
+            for tag in row.get("tags") or []:
+                tag_id = str(tag.get("id")) if isinstance(tag, dict) else ""
+                if not tag_id.isdigit():
+                    raise AulaApiError("Aula returned an unreadable photo tag; reload the album before retrying")
+                if int(tag_id) != target and int(tag_id) not in tag_ids:
+                    tag_ids.append(int(tag_id))
+            if tagged:
+                tag_ids.append(target)
+            title, description = row.get("title"), row.get("description")
+            payload = client.update_media_tags(
+                int(media_id), tag_ids,
+                title if isinstance(title, str) else None,
+                description if isinstance(description, str) else None)
             with _lock:
                 _cache.pop(("media", album_id), None)
-            if (not isinstance(payload, dict) or (payload.get("status") or {}).get("code", 0) != 0
-                    or payload.get("data") is not True):
+            if not isinstance(payload, dict) or (payload.get("status") or {}).get("code", 0) != 0:
                 raise AulaApiError("Aula did not confirm the photo tag; reload the album before retrying")
         detail = album_detail(client, children, album_id)
         confirmed = next((photo for photo in detail["media"] if photo["id"] == media_id), None)

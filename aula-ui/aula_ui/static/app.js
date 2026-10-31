@@ -8,6 +8,7 @@ const paths = {
   saved: '<path d="M6 3h12v18l-6-4-6 4z"/>',
   read: '<path d="M4 4h16v13H8l-4 4z"/>',
   share: '<path d="m14 3 7 7-7 7v-4c-6 0-9 2-11 6 0-8 4-12 11-12z"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
 };
 function icon(name) {
@@ -1382,10 +1383,15 @@ function openImageViewer(initial, gallery = [initial]) {
   viewer.setAttribute("aria-label", attachment.name || "Image viewer");
   const toolbar = el("div", "image-viewer-toolbar");
   const actions = el("div", "image-viewer-actions");
-  const share = el("button", "image-viewer-share", "Share");
+  const bottom = el("div", "image-viewer-bottom");
+  const tagSlot = el("div", "image-viewer-tags");
+  const share = el("button", "image-viewer-share image-viewer-icon");
   share.type = "button";
-  const close = el("button", "image-viewer-close", "Close");
+  share.innerHTML = icon("share");
+  const close = el("button", "image-viewer-close image-viewer-icon");
   close.type = "button";
+  close.innerHTML = icon("close");
+  close.setAttribute("aria-label", "Close");
   close.addEventListener("click", () => viewer.close());
   const previous = el("button", "image-viewer-nav", "‹");
   previous.type = "button";
@@ -1395,8 +1401,7 @@ function openImageViewer(initial, gallery = [initial]) {
   next.setAttribute("aria-label", "Next image");
   const counter = el("span", "image-viewer-counter");
   if (gallery.length > 1) actions.append(previous, counter, next);
-  actions.append(share, close);
-  toolbar.append(actions);
+  toolbar.append(el("span"), actions, close);
   const image = el("img");
   image.referrerPolicy = "no-referrer";
   image.addEventListener("error", () => {
@@ -1406,7 +1411,36 @@ function openImageViewer(initial, gallery = [initial]) {
   const status = el("p", "image-viewer-share-status");
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
-  toolbar.append(status);
+  bottom.append(tagSlot, status, share);
+  let tagBusy = false;
+  function paintTags() {
+    const tags = attachment.tags;
+    tagSlot.replaceChildren(...(tags ? tags.choices.map(child => {
+      const tagged = tags.photo.tagged_children.includes(child.slug);
+      const button = el("button", "image-viewer-tag", `${tagged ? "✓" : "+"} ${child.name}`);
+      button.type = "button";
+      button.disabled = tagBusy;
+      button.setAttribute("aria-pressed", String(tagged));
+      button.setAttribute("aria-label", `${tagged ? "Remove tag for" : "Tag"} ${child.name}`);
+      button.addEventListener("click", async () => {
+        if (tagBusy) return;
+        const current = attachment;
+        tagBusy = true;
+        paintTags();
+        status.textContent = "Saving tag in Aula…";
+        try {
+          await tags.save(tags.photo, child, !tagged);
+          if (current === attachment) status.textContent = tagged ? "Tag removed in Aula." : "Tagged in Aula.";
+        } catch (error) {
+          if (current === attachment) status.textContent = `Tag not confirmed: ${error.message}`;
+        } finally {
+          tagBusy = false;
+          if (current === attachment) paintTags();
+        }
+      });
+      return button;
+    }) : []));
+  }
   let sharedFile = null;
   let shareByLink = false;
   let sharing = false;
@@ -1419,6 +1453,7 @@ function openImageViewer(initial, gallery = [initial]) {
     viewer.setAttribute("aria-label", attachment.name || "Image viewer");
     share.setAttribute("aria-label", `Share ${attachment.name || "image"}`);
     counter.textContent = `${index + 1} / ${gallery.length}`;
+    paintTags();
     image.alt = attachment.name || "Aula image";
     image.src = attachment.url;
     content.replaceChildren(image);
@@ -1429,7 +1464,7 @@ function openImageViewer(initial, gallery = [initial]) {
     }
   }
   function step(delta) {
-    if (gallery.length > 1 && !sharing) show(index + delta);
+    if (gallery.length > 1 && !sharing && !tagBusy) show(index + delta);
   }
   previous.addEventListener("click", () => step(-1));
   next.addEventListener("click", () => step(1));
@@ -1504,7 +1539,7 @@ function openImageViewer(initial, gallery = [initial]) {
       share.disabled = false;
     }
   });
-  viewer.append(toolbar, content);
+  viewer.append(toolbar, content, bottom);
   viewer.addEventListener("close", () => viewer.remove(), {once: true});
   show(index);
   document.body.append(viewer);
@@ -1960,6 +1995,85 @@ function saveAllControl(photos, fetchPhoto) {
   button.onclick = () => run(first);
   return wrap;
 }
+async function saveAlbumTag(album, photo, child, tagged) {
+  const response = await fetch("api/gallery/tag", {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-Aula-Request": "settings"},
+    body: JSON.stringify({album, media: photo.id, child: child.slug, tagged}),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "Aula could not save this tag");
+  Object.assign(photo, result);
+  return photo;
+}
+function albumTagBar(photos, choices, save, paint) {
+  const bar = el("div", "album-tag-bar");
+  const all = el("button", "album-bar-link");
+  all.type = "button";
+  const count = el("span", "album-selected-count");
+  const actions = el("div", "album-tag-actions");
+  const status = el("p", "profile-status album-tag-status");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  const control = {bar, selected: new Set(), busy: false, update};
+  const buttons = choices.map(child => {
+    const button = el("button", "action album-tag");
+    button.type = "button";
+    button.addEventListener("click", () => apply(child));
+    actions.append(button);
+    return {child, button};
+  });
+  function removing(child) {
+    const chosen = [...control.selected];
+    return chosen.length > 0 && chosen.every(photo => photo.tagged_children.includes(child.slug));
+  }
+  function update() {
+    const size = control.selected.size;
+    count.textContent = size ? `${size} selected` : "Select photos";
+    all.textContent = size === photos.length ? "Clear" : "Select all";
+    all.disabled = control.busy;
+    for (const {child, button} of buttons) {
+      const remove = removing(child);
+      button.textContent = `${remove ? "Untag" : "Tag"} ${child.name}${size ? ` (${size})` : ""}`;
+      button.setAttribute("aria-label", `${remove ? "Remove tag for" : "Tag"} ${child.name} in ${size} selected photo${size === 1 ? "" : "s"}`);
+      button.disabled = control.busy || !size;
+    }
+    photos.forEach(paint);
+  }
+  all.addEventListener("click", () => {
+    if (control.busy) return;
+    if (control.selected.size === photos.length) control.selected.clear();
+    else photos.forEach(photo => control.selected.add(photo));
+    status.textContent = "";
+    update();
+  });
+  async function apply(child) {
+    if (control.busy || !control.selected.size) return;
+    const tagged = !removing(child);
+    const pending = [...control.selected].filter(photo => photo.tagged_children.includes(child.slug) !== tagged);
+    control.busy = true;
+    update();
+    const failed = [];
+    let error = null;
+    for (const [index, photo] of pending.entries()) {
+      status.textContent = `Saving ${index + 1} of ${pending.length} in Aula…`;
+      try { await save(photo, child, tagged); } catch (reason) { failed.push(photo); error = reason; }
+    }
+    control.selected = new Set(failed);
+    control.busy = false;
+    const done = pending.length - failed.length;
+    const verb = tagged ? `Tagged ${child.name} in` : `Removed ${child.name} from`;
+    status.textContent = failed.length
+      ? `Tag not confirmed for ${failed.length} photo${failed.length === 1 ? "" : "s"}: ${error.message}${done ? ` (${done} saved)` : ""}`
+      : `${verb} ${done} photo${done === 1 ? "" : "s"} in Aula.`;
+    update();
+  }
+  const head = el("div", "album-tag-head");
+  head.append(count, all);
+  bar.append(head, actions, status);
+  update();
+  return control;
+}
 async function albumSection(item, page) {
   const section = el("section", "detail-body album-photos");
   section.append(el("h2", "", "Photos"), el("p", "profile-status", "Loading photos…"));
@@ -1972,11 +2086,34 @@ async function albumSection(item, page) {
     const photos = album.media.filter(photo => photo.type === "image");
     if (photos.length) section.append(saveAllControl(photos, photo => fetchAlbumPhoto(item.album.id, photo)));
     section.append(el("p", "profile-status",
-      "Tag your children only in photos you have checked. Tags are saved back to Aula."));
+      "Select photos you have checked, then tag your child. Tags are saved back to Aula."));
     if (!album.media.some(photo => photo.can_edit_tags)) {
       section.append(el("p", "profile-status", "Aula does not allow your account to edit tags in this album."));
     }
-    const viewerImages = photos.map(photo => ({name: photo.name, url: albumImage(item.album.id, photo, "large")}));
+    const choices = album.tag_choices || [];
+    const tiles = new Map();
+    function paintTile(photo) {
+      const tile = tiles.get(photo);
+      if (!tile) return;
+      const selected = tagging?.selected.has(photo) || false;
+      tile.classList.toggle("selected", selected);
+      tile.querySelector(".album-select")?.setAttribute("aria-pressed", String(selected));
+      tile.querySelector(".album-tag-badges").replaceChildren(...choices
+        .filter(child => photo.tagged_children.includes(child.slug))
+        .map(child => el("span", "album-tag-badge", child.name)));
+    }
+    const saveTag = (photo, child, tagged) => saveAlbumTag(item.album.id, photo, child, tagged)
+      .finally(() => paintTile(photo));
+    const tagging = choices.length && album.media.some(photo => photo.can_edit_tags)
+      ? albumTagBar(album.media.filter(photo => photo.can_edit_tags), choices, saveTag, paintTile) : null;
+    if (tagging) {
+      tagging.bar.style.setProperty("--album-bar-top", `${document.querySelector(".topbar")?.offsetHeight || 0}px`);
+      section.append(tagging.bar);
+    }
+    const viewerImages = photos.map(photo => ({
+      name: photo.name, url: albumImage(item.album.id, photo, "large"),
+      tags: photo.can_edit_tags && choices.length ? {photo, choices, save: saveTag} : null,
+    }));
     const grid = el("div", "album-grid");
     for (const photo of album.media) {
       const tile = el("div", "album-photo-tile");
@@ -1996,45 +2133,23 @@ async function albumSection(item, page) {
         open.addEventListener("click", () => openImageViewer(viewerImages[photos.indexOf(photo)], viewerImages));
       }
       tile.append(open);
-      if (photo.can_edit_tags && album.tag_choices?.length) {
-        const tags = el("div", "album-tags");
-        const status = el("p", "profile-status");
-        status.setAttribute("role", "status");
-        for (const child of album.tag_choices) {
-          const button = el("button", "action album-tag");
-          button.type = "button";
-          function label() {
-            const tagged = photo.tagged_children.includes(child.slug);
-            button.textContent = `${tagged ? "Tagged:" : "Tag"} ${child.name}`;
-            button.setAttribute("aria-pressed", String(tagged));
-            button.setAttribute("aria-label", `${tagged ? "Remove tag for" : "Tag"} ${child.name} in ${photo.name}`);
-          }
-          label();
-          button.addEventListener("click", async () => {
-            const tagged = !photo.tagged_children.includes(child.slug);
-            tags.querySelectorAll("button").forEach(control => { control.disabled = true; });
-            status.textContent = "Saving tag in Aula…";
-            try {
-              const response = await fetch("api/gallery/tag", {
-                method: "POST",
-                headers: {"Content-Type": "application/json", "X-Aula-Request": "settings"},
-                body: JSON.stringify({album: item.album.id, media: photo.id, child: child.slug, tagged}),
-              });
-              const result = await response.json().catch(() => ({}));
-              if (!response.ok) throw new Error(result.error || "Aula could not save this tag");
-              Object.assign(photo, result);
-              label();
-              status.textContent = tagged ? "Tagged in Aula." : "Tag removed in Aula.";
-            } catch (error) {
-              status.textContent = `Tag not confirmed: ${error.message}`;
-            } finally {
-              tags.querySelectorAll("button").forEach(control => { control.disabled = false; });
-            }
-          });
-          tags.append(button);
-        }
-        tile.append(tags, status);
+      if (tagging && photo.can_edit_tags) {
+        const pick = el("button", "album-select");
+        pick.type = "button";
+        pick.setAttribute("aria-pressed", "false");
+        pick.setAttribute("aria-label", `Select ${photo.name}`);
+        pick.addEventListener("click", () => {
+          if (tagging.busy) return;
+          if (tagging.selected.has(photo)) tagging.selected.delete(photo); else tagging.selected.add(photo);
+          tagging.update();
+        });
+        tile.append(pick);
+        tile.classList.add("album-photo-selectable");
       }
+      const badges = el("div", "album-tag-badges");
+      tile.append(badges);
+      tiles.set(photo, tile);
+      paintTile(photo);
       grid.append(tile);
     }
     section.append(grid);

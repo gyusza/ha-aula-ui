@@ -66,6 +66,17 @@ class DirectAulaClient:
             self._select_guardian_context()
         return self._request(uri, data)
 
+    def update_media_tags(self, media_id, tag_ids, title, description):
+        """Replace one photo's tag list, exactly as Aula's own web gallery does."""
+        if (type(media_id) is not int or media_id < 1 or not isinstance(tag_ids, list)
+                or any(type(tag) is not int or tag < 1 for tag in tag_ids)
+                or len(set(tag_ids)) != len(tag_ids)
+                or not (title is None or isinstance(title, str))
+                or not (description is None or isinstance(description, str))):
+            raise ValueError("Aula photo tags need a photo id and unique institution profile ids")
+        return self.post("?method=files.updateAttachments", {"media": [{
+            "id": media_id, "tags": tag_ids, "description": description, "title": title}]})
+
     def _select_guardian_context(self):
         context = self.get("?method=profiles.getProfileContext&portalrole=guardian")["data"]
         if not isinstance(context, dict):
@@ -248,7 +259,7 @@ class DirectAulaClient:
                                     round(self._paused_until - now))
                     self._rate_changed()
                     raise self._rate_limit_error(method)
-                if response.status_code == 403 and data is not None:
+                if response.status_code == 403 and data is not None and method.startswith("calendar."):
                     raise AulaApiError(
                         "Aula denied calendar access (HTTP 403) after guardian session setup. "
                         "Check guardian calendar permissions or reconnect the account. "

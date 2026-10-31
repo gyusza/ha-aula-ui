@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.9.54
+
+- Album photo tagging is now multi-select: tick photos (or **Select all**) and
+  use one **Tag [child]** button at the top of the album, which saves and
+  confirms each photo in turn. Tagged children appear as badges on the photos.
+- The full-size image viewer gained a tag toggle. Its controls are smaller:
+  previous/next centred at the top, Close as an icon at the top right, tag and
+  Share at the bottom, and the image centred vertically.
+
+## 1.9.53
+
+- Fixed photo tagging: Aula's web API has no `gallery.addTag` method or
+  media-tags REST route (both return HTTP 404). Tags are now saved with
+  `files.updateAttachments`, the call Aula's own web gallery uses, sending the
+  full tag list so other people's tags, the title and the description are kept.
+  The result is still confirmed against the reloaded album.
+
+## 1.9.52
+
+- Fixed explicit photo tagging by using Aula's gallery media-tags REST routes
+  instead of the obsolete `gallery.addTag` / `gallery.removeTag` RPC methods.
+  Changes are still verified against the reloaded album before showing success.
+
 ## 1.9.50
 
 - The feed shows 20 items before Show more (was 30); each Show more adds 20.

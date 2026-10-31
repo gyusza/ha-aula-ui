@@ -439,6 +439,10 @@ class Session:
         self.calls.append((url, kwargs))
         return next(self.responses)
 
+    def post(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return next(self.responses)
+
     def close(self):
         pass
 
@@ -462,6 +466,27 @@ def test_direct_discovery_upgrades_aula_api_and_keeps_child_identifiers(controll
     source.session = Session(Response({"invalid": True}))
     with pytest.raises(AulaApiError, match="invalid response"):
         source.get("?method=anything")
+
+
+def test_direct_gallery_tag_uses_aula_web_update_attachments(controller):
+    install(controller)
+    session = Session(payload(None))
+    source = DirectAulaClient(controller.account.connection, session)
+    source.context = WIDGETS
+
+    assert source.update_media_tags(211983628, [900, 1001], "Bike trip", None)["status"]["code"] == 0
+    url, kwargs = session.calls[0]
+    assert url.endswith("/api/v22")
+    assert ("method", "files.updateAttachments") in kwargs["params"]
+    assert ("access_token", TOKENS["access_token"]) in kwargs["params"]
+    assert kwargs["json"] == {"media": [{
+        "id": 211983628, "tags": [900, 1001], "description": None, "title": "Bike trip"}]}
+
+    for args in [("211983628", [1001], None, None), (211983628, ["1001"], None, None),
+                 (211983628, [1001, 1001], None, None), (211983628, [1001], 5, None)]:
+        with pytest.raises(ValueError):
+            source.update_media_tags(*args)
+    assert len(session.calls) == 1
 
 
 def test_direct_presence_and_easyiq_contract_reuses_valid_variant_for_empty_weeks(controller):
