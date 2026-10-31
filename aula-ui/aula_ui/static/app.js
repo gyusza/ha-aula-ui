@@ -1415,11 +1415,13 @@ function openImageViewer(initial, gallery = [initial]) {
   let tagBusy = false;
   function paintTags() {
     const tags = attachment.tags;
+    const focused = tagSlot.contains(document.activeElement) ? document.activeElement.dataset.child : null;
     tagSlot.replaceChildren(...(tags ? tags.choices.map(child => {
       const tagged = tags.photo.tagged_children.includes(child.slug);
       const button = el("button", "image-viewer-tag", `${tagged ? "✓" : "+"} ${child.name}`);
       button.type = "button";
-      button.disabled = tagBusy;
+      button.dataset.child = child.slug;
+      button.setAttribute("aria-disabled", String(tagBusy));
       button.setAttribute("aria-pressed", String(tagged));
       button.setAttribute("aria-label", `${tagged ? "Remove tag for" : "Tag"} ${child.name}`);
       button.addEventListener("click", async () => {
@@ -1440,6 +1442,7 @@ function openImageViewer(initial, gallery = [initial]) {
       });
       return button;
     }) : []));
+    if (focused) tagSlot.querySelector(`[data-child="${CSS.escape(focused)}"]`)?.focus();
   }
   let sharedFile = null;
   let shareByLink = false;
@@ -1932,14 +1935,26 @@ async function fetchAlbumPhoto(album, photo) {
   return file;
 }
 function saveAllLabel(count) { return count === 1 ? "Save photo" : `Save all ${count} photos`; }
-function saveAllControl(photos, fetchPhoto) {
+function savedTaggedLabel(count) {
+  return count ? `Save ${count} tagged photo${count === 1 ? "" : "s"}` : "No tagged photos yet";
+}
+function saveAllControl(source, fetchPhoto, label = saveAllLabel) {
   const wrap = el("div", "album-save");
-  const button = el("button", "action", saveAllLabel(photos.length));
+  const button = el("button", "action");
   button.type = "button";
   const note = el("p", "profile-status");
   wrap.append(button, note);
+  let photos = [];
   let files = null;
   let busy = false;
+  function reset() {
+    photos = typeof source === "function" ? source() : source;
+    files = null;
+    button.textContent = label(photos.length);
+    button.disabled = !photos.length;
+    button.onclick = () => run(first);
+  }
+  wrap.refresh = () => { if (!busy) { reset(); note.textContent = ""; } };
   const batchSize = 30;
   async function share(start) {
     const batch = files.slice(start, start + batchSize);
@@ -1954,8 +1969,7 @@ function saveAllControl(photos, fetchPhoto) {
       button.textContent = `Save photos ${next + 1}–${Math.min(next + batchSize, files.length)}`;
       button.onclick = () => run(() => share(next));
     } else {
-      button.textContent = saveAllLabel(photos.length);
-      button.onclick = first;
+      reset();
     }
   }
   async function run(task) {
@@ -1990,9 +2004,9 @@ function saveAllControl(photos, fetchPhoto) {
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       await new Promise(resolve => setTimeout(resolve, 250));
     }
-    note.textContent = `Downloaded ${files.length} photos.`;
+    note.textContent = `Downloaded ${files.length} photo${files.length === 1 ? "" : "s"}.`;
   }
-  button.onclick = () => run(first);
+  reset();
   return wrap;
 }
 async function saveAlbumTag(album, photo, child, tagged) {
@@ -2006,74 +2020,6 @@ async function saveAlbumTag(album, photo, child, tagged) {
   Object.assign(photo, result);
   return photo;
 }
-function albumTagBar(photos, choices, save, paint) {
-  const bar = el("div", "album-tag-bar");
-  const all = el("button", "album-bar-link");
-  all.type = "button";
-  const count = el("span", "album-selected-count");
-  const actions = el("div", "album-tag-actions");
-  const status = el("p", "profile-status album-tag-status");
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-  const control = {bar, selected: new Set(), busy: false, update};
-  const buttons = choices.map(child => {
-    const button = el("button", "action album-tag");
-    button.type = "button";
-    button.addEventListener("click", () => apply(child));
-    actions.append(button);
-    return {child, button};
-  });
-  function removing(child) {
-    const chosen = [...control.selected];
-    return chosen.length > 0 && chosen.every(photo => photo.tagged_children.includes(child.slug));
-  }
-  function update() {
-    const size = control.selected.size;
-    count.textContent = size ? `${size} selected` : "Select photos";
-    all.textContent = size === photos.length ? "Clear" : "Select all";
-    all.disabled = control.busy;
-    for (const {child, button} of buttons) {
-      const remove = removing(child);
-      button.textContent = `${remove ? "Untag" : "Tag"} ${child.name}${size ? ` (${size})` : ""}`;
-      button.setAttribute("aria-label", `${remove ? "Remove tag for" : "Tag"} ${child.name} in ${size} selected photo${size === 1 ? "" : "s"}`);
-      button.disabled = control.busy || !size;
-    }
-    photos.forEach(paint);
-  }
-  all.addEventListener("click", () => {
-    if (control.busy) return;
-    if (control.selected.size === photos.length) control.selected.clear();
-    else photos.forEach(photo => control.selected.add(photo));
-    status.textContent = "";
-    update();
-  });
-  async function apply(child) {
-    if (control.busy || !control.selected.size) return;
-    const tagged = !removing(child);
-    const pending = [...control.selected].filter(photo => photo.tagged_children.includes(child.slug) !== tagged);
-    control.busy = true;
-    update();
-    const failed = [];
-    let error = null;
-    for (const [index, photo] of pending.entries()) {
-      status.textContent = `Saving ${index + 1} of ${pending.length} in Aula…`;
-      try { await save(photo, child, tagged); } catch (reason) { failed.push(photo); error = reason; }
-    }
-    control.selected = new Set(failed);
-    control.busy = false;
-    const done = pending.length - failed.length;
-    const verb = tagged ? `Tagged ${child.name} in` : `Removed ${child.name} from`;
-    status.textContent = failed.length
-      ? `Tag not confirmed for ${failed.length} photo${failed.length === 1 ? "" : "s"}: ${error.message}${done ? ` (${done} saved)` : ""}`
-      : `${verb} ${done} photo${done === 1 ? "" : "s"} in Aula.`;
-    update();
-  }
-  const head = el("div", "album-tag-head");
-  head.append(count, all);
-  bar.append(head, actions, status);
-  update();
-  return control;
-}
 async function albumSection(item, page) {
   const section = el("section", "detail-body album-photos");
   section.append(el("h2", "", "Photos"), el("p", "profile-status", "Loading photos…"));
@@ -2084,32 +2030,27 @@ async function albumSection(item, page) {
     const album = await response.json();
     section.replaceChildren(el("h2", "", `${album.count} photo${album.count === 1 ? "" : "s"}`));
     const photos = album.media.filter(photo => photo.type === "image");
-    if (photos.length) section.append(saveAllControl(photos, photo => fetchAlbumPhoto(item.album.id, photo)));
-    section.append(el("p", "profile-status",
-      "Select photos you have checked, then tag your child. Tags are saved back to Aula."));
-    if (!album.media.some(photo => photo.can_edit_tags)) {
+    const choices = album.tag_choices || [];
+    const saveTagged = choices.length && photos.length ? saveAllControl(
+      () => photos.filter(photo => photo.tagged_children.length),
+      photo => fetchAlbumPhoto(item.album.id, photo), savedTaggedLabel) : null;
+    if (saveTagged) section.append(saveTagged);
+    if (choices.length && album.media.some(photo => photo.can_edit_tags)) {
+      section.append(el("p", "profile-status",
+        "Open a photo you have checked to tag your child. Tags are saved back to Aula."));
+    } else if (choices.length) {
       section.append(el("p", "profile-status", "Aula does not allow your account to edit tags in this album."));
     }
-    const choices = album.tag_choices || [];
     const tiles = new Map();
     function paintTile(photo) {
       const tile = tiles.get(photo);
       if (!tile) return;
-      const selected = tagging?.selected.has(photo) || false;
-      tile.classList.toggle("selected", selected);
-      tile.querySelector(".album-select")?.setAttribute("aria-pressed", String(selected));
       tile.querySelector(".album-tag-badges").replaceChildren(...choices
         .filter(child => photo.tagged_children.includes(child.slug))
         .map(child => el("span", "album-tag-badge", child.name)));
     }
     const saveTag = (photo, child, tagged) => saveAlbumTag(item.album.id, photo, child, tagged)
-      .finally(() => paintTile(photo));
-    const tagging = choices.length && album.media.some(photo => photo.can_edit_tags)
-      ? albumTagBar(album.media.filter(photo => photo.can_edit_tags), choices, saveTag, paintTile) : null;
-    if (tagging) {
-      tagging.bar.style.setProperty("--album-bar-top", `${document.querySelector(".topbar")?.offsetHeight || 0}px`);
-      section.append(tagging.bar);
-    }
+      .finally(() => { paintTile(photo); saveTagged?.refresh(); });
     const viewerImages = photos.map(photo => ({
       name: photo.name, url: albumImage(item.album.id, photo, "large"),
       tags: photo.can_edit_tags && choices.length ? {photo, choices, save: saveTag} : null,
@@ -2133,19 +2074,6 @@ async function albumSection(item, page) {
         open.addEventListener("click", () => openImageViewer(viewerImages[photos.indexOf(photo)], viewerImages));
       }
       tile.append(open);
-      if (tagging && photo.can_edit_tags) {
-        const pick = el("button", "album-select");
-        pick.type = "button";
-        pick.setAttribute("aria-pressed", "false");
-        pick.setAttribute("aria-label", `Select ${photo.name}`);
-        pick.addEventListener("click", () => {
-          if (tagging.busy) return;
-          if (tagging.selected.has(photo)) tagging.selected.delete(photo); else tagging.selected.add(photo);
-          tagging.update();
-        });
-        tile.append(pick);
-        tile.classList.add("album-photo-selectable");
-      }
       const badges = el("div", "album-tag-badges");
       tile.append(badges);
       tiles.set(photo, tile);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.55
+
+- Removed album multi-select tagging; tag photos from the full-size viewer.
+- Albums now offer **Save N tagged photos** instead of Save all, saving only
+  photos your children are tagged in and updating as tags change.
+- Keyboard focus stays on the viewer's tag toggle after saving, so arrow keys
+  keep navigating.
+
 ## 1.9.54
 
 - Album photo tagging is now multi-select: tick photos (or **Select all**) and

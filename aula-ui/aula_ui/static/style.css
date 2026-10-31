@@ -312,7 +312,7 @@ summary{color:var(--muted);font-size:12px;cursor:pointer;min-height:34px}
 .image-viewer-tags{display:flex;flex-wrap:wrap;gap:6px}
 .image-viewer-tag{min-height:32px;padding:.2rem .7rem;border:1px solid #777;border-radius:2rem;color:white;background:#202428;font-size:13px;cursor:pointer}
 .image-viewer-tag[aria-pressed="true"]{border-color:#8fc7ff;color:#8fc7ff}
-.image-viewer-tag:disabled{opacity:.6}
+.image-viewer-tag[aria-disabled="true"]{opacity:.6}
 .image-viewer .image-viewer-icon{display:grid;place-items:center;width:36px;height:36px;min-height:36px;padding:0;border-radius:50%}
 .image-viewer-icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .image-viewer-actions{display:flex;align-items:center;gap:8px}
@@ -441,20 +441,8 @@ summary{color:var(--muted);font-size:12px;cursor:pointer;min-height:34px}
 .album-photo-tile { min-width: 0; }
 .album-photo-tile > .album-photo { width: 100%; }
 .album-photo-tile { position: relative; }
-.album-select { position: absolute; top: 2px; right: 2px; width: 40px; height: 40px; padding: 0; border: 0; background: none; cursor: pointer; }
-.album-select::after { content: ""; position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; box-sizing: border-box; border: 2px solid #fff; border-radius: 50%; background: rgba(0,0,0,.35); box-shadow: 0 0 2px rgba(0,0,0,.6); }
-.album-select[aria-pressed="true"]::after { content: "✓"; display: grid; place-items: center; background: var(--blue); border-color: var(--blue); color: #fff; font-size: 13px; font-weight: 700; }
-.album-photo-tile.selected > .album-photo { outline: 3px solid var(--blue); outline-offset: -3px; }
 .album-tag-badges { position: absolute; left: 4px; top: 4px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; }
 .album-tag-badge { padding: 1px 6px; border-radius: 6px; background: rgba(0,0,0,.65); color: #8fc7ff; font-size: .7rem; }
-.album-tag-bar { position: sticky; top: var(--album-bar-top, 0px); z-index: 3; display: grid; gap: 6px; margin: .5rem -4px 0; padding: 8px 4px; background: var(--bg); }
-.album-tag-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .9rem; }
-.album-bar-link { padding: .3rem .2rem; border: 0; background: none; color: var(--blue); font: inherit; cursor: pointer; }
-.album-tag-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.album-tag-status:empty { display: none; }
-.album-tag-status { margin: 0; }
-.album-tag { padding: .4rem .5rem; font-size: .8rem; }
-.album-tag[aria-pressed="true"] { border-color: var(--blue); color: var(--blue); }
 .sickness-toggle{display:flex;align-items:center;gap:6px;min-height:32px;margin:6px 0;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}
 .sickness-box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid currentColor;border-radius:3px;line-height:1}
 .sickness-toggle[aria-pressed="true"]{color:var(--blue);border-color:var(--blue)}

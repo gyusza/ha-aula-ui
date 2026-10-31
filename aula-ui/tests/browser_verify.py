@@ -817,34 +817,29 @@ async def album_tagging(browser, url):
     await page.route("**/api/gallery/image?*", lambda route: route.fulfill(status=404, body=""))
     await page.route("**/api/gallery/tag", write)
     try:
+        photos[1]["tagged_children"] = ["maja"]
         await page.goto(url + "#post/album%3A77", wait_until="networkidle")
-        bar = page.locator(".album-tag-bar")
-        await bar.wait_for()
-        button = bar.locator(".album-tag")
-        assert await button.count() == 1 and await button.is_disabled()
-        assert await page.locator(".album-select").count() == 2
+        save = page.get_by_role("button", name="Save 1 tagged photo", exact=True)
+        await save.wait_for()
+        assert await page.get_by_text("Save all", exact=False).count() == 0
+        assert await page.locator(".album-tag-bar, .album-select, .album-tag").count() == 0
+        assert await page.locator(".album-tag-badge").count() == 1
         assert writes == []
-        await page.get_by_role("button", name="Select photo1.jpg", exact=True).click()
-        assert await button.inner_text() == "Tag Maja (1)"
-        await bar.get_by_role("button", name="Select all", exact=True).click()
-        await bar.get_by_text("2 selected", exact=True).wait_for()
-        await button.click()
-        await bar.get_by_text("Tagged Maja in 2 photos in Aula.", exact=True).wait_for()
-        assert [(w["media"], w["tagged"]) for w in writes] == [("1", True), ("2", True)]
+        await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
+        viewer = page.get_by_role("dialog")
+        await viewer.get_by_role("button", name="Tag Maja", exact=True).click()
+        await viewer.get_by_text("Tagged in Aula.", exact=True).wait_for()
+        assert writes == [{"album": "77", "media": "1", "child": "maja", "tagged": True}]
+        await page.keyboard.press("Escape")
+        await page.get_by_role("button", name="Save 2 tagged photos", exact=True).wait_for()
         assert await page.locator(".album-tag-badge").count() == 2
-        assert await page.locator(".album-select[aria-pressed=true]").count() == 0
-        await page.get_by_role("button", name="Select photo2.jpg", exact=True).click()
-        assert await button.inner_text() == "Untag Maja (1)"
-        await button.click()
-        await bar.get_by_text("Removed Maja from 1 photo in Aula.", exact=True).wait_for()
-        assert writes[-1] == {"album": "77", "media": "2", "child": "maja", "tagged": False}
-        assert await page.locator(".album-tag-badge").count() == 1
         fail = True
-        await page.get_by_role("button", name="Select photo2.jpg", exact=True).click()
-        await button.click()
-        await bar.get_by_text("Tag not confirmed for 1 photo: Aula rejected this tag", exact=False).wait_for()
-        assert await page.locator(".album-select[aria-pressed=true]").count() == 1
-        assert await page.locator(".album-tag-badge").count() == 1
+        await page.get_by_role("button", name="View photo2.jpg", exact=True).click()
+        await viewer.get_by_role("button", name="Remove tag for Maja", exact=True).click()
+        await viewer.get_by_text("Tag not confirmed: Aula rejected this tag", exact=True).wait_for()
+        await viewer.get_by_role("button", name="Remove tag for Maja", exact=True).wait_for()
+        await page.keyboard.press("Escape")
+        await page.get_by_role("button", name="Save 2 tagged photos", exact=True).wait_for()
         fail = False
         await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
         viewer = page.get_by_role("dialog")
@@ -868,14 +863,21 @@ async def album_tagging(browser, url):
         await viewer.get_by_text("Tag removed in Aula.", exact=True).wait_for()
         assert writes[-1] == {"album": "77", "media": "1", "child": "maja", "tagged": False}
         await page.keyboard.press("ArrowRight")
-        await viewer.get_by_role("button", name="Tag Maja", exact=True).wait_for()
+        await viewer.get_by_role("button", name="Remove tag for Maja", exact=True).wait_for()
         await page.keyboard.press("Escape")
-        assert await page.locator(".album-tag-badge").count() == 0
+        assert await page.locator(".album-tag-badge").count() == 1
+        originals = []
+        page.on("request", lambda request: originals.append(request.url)
+                if "size=original" in request.url else None)
+        await page.get_by_role("button", name="Save 1 tagged photo", exact=True).click()
+        await page.get_by_text("Could not save: Photo unavailable", exact=True).wait_for()
+        assert len(originals) == 1 and "media=2&" in originals[0]
+        photos[1]["tagged_children"] = []
         for photo in photos:
             photo["can_edit_tags"] = False
         await page.reload(wait_until="networkidle")
         await page.get_by_text("Aula does not allow your account to edit tags in this album.").wait_for()
-        assert await page.locator(".album-tag, .album-select, .album-tag-bar").count() == 0
+        assert await page.get_by_role("button", name="No tagged photos yet", exact=True).is_disabled()
         await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
         await page.get_by_role("dialog").get_by_role("button", name="Close", exact=True).wait_for()
         assert await page.locator(".image-viewer-tag").count() == 0
