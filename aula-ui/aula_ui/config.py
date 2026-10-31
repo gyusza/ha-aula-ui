@@ -78,6 +78,8 @@ class AddonConfig:
     access_aud: str = ""
     access_allowed_emails: tuple[str, ...] = ()
     public_url: str = ""
+    mcp_key: str = ""
+    mcp_allow_writes: bool = False
     children: tuple[ChildConfig, ...] = field(default_factory=tuple)
 
 
@@ -244,6 +246,13 @@ def build_config(options: dict[str, Any] | None = None) -> AddonConfig:
     if not isinstance(log_color, bool):
         raise ConfigError("Option 'log_color' must be a boolean")
 
+    mcp_key = _as_str(options.get("mcp_key"))
+    if mcp_key and not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", mcp_key):
+        raise ConfigError("Option 'mcp_key' must be 32-128 letters, digits, '-' or '_' (or empty to disable MCP)")
+    mcp_allow_writes = options.get("mcp_allow_writes", False)
+    if not isinstance(mcp_allow_writes, bool):
+        raise ConfigError("Option 'mcp_allow_writes' must be a boolean")
+
     emails = options.get("access_allowed_emails") or []
     if not isinstance(emails, list) or not all(isinstance(e, str) for e in emails):
         raise ConfigError("Option 'access_allowed_emails' must be a list of email addresses")
@@ -281,6 +290,8 @@ def build_config(options: dict[str, Any] | None = None) -> AddonConfig:
         access_aud=_as_str(options.get("access_aud")),
         access_allowed_emails=tuple(e.strip().lower() for e in emails if e.strip()),
         public_url=_public_url(options.get("public_url", DEFAULT_PUBLIC_URL)),
+        mcp_key=mcp_key,
+        mcp_allow_writes=mcp_allow_writes,
         children=_parse_children(options.get("children"), direct=data_source == "direct"),
     )
 
