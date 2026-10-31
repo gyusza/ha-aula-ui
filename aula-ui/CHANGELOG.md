@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.58
+
+- Removed the retired Siri connector from Settings, the API and cached assets.
+- Existing Siri key hashes are removed from saved profiles on startup.
+
 ## 1.9.57
 
 - Added an MCP endpoint at `/mcp/<mcp_key>` for remote connectors such as claude.ai.

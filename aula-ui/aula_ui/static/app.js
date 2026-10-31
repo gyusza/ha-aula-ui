@@ -2445,9 +2445,6 @@ async function route(restoreFromHistory = false) {
       const notifyLink = el("a", "profile-link", "Notifications ›");
       notifyLink.href = "#notifications";
       container.append(notifyLink);
-      const siriLink = el("a", "profile-link", "Siri & Shortcuts ›");
-      siriLink.href = "#siri-settings";
-      container.append(siriLink);
       const syncLink = el("a", "profile-link", "Sync ›");
       syncLink.href = "#sync-settings";
       container.append(syncLink);
@@ -2459,13 +2456,6 @@ async function route(restoreFromHistory = false) {
       const mount = el("section", "page-panel");
       container.append(mount);
       window.AulaSyncSettings?.render(mount);
-      return;
-    }
-    if (key === "siri-settings") {
-      const container = pageShell("Siri & Shortcuts", "#profiles");
-      const mount = el("section", "page-panel");
-      container.append(mount);
-      window.AulaSiriSettings?.render(mount);
       return;
     }
     if (key === "notifications") {

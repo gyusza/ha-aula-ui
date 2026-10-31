@@ -113,20 +113,6 @@ def test_failed_jwks_fetch_is_throttled_and_nested_tokens_rejected():
     assert verifier.verify(f"{nested}.e30.c2ln") is None
 
 
-def test_siri_sick_status_for_child_missing_from_aula_status_is_not_found(tmp_path):
-    from aula_ui.siri import SiriConnector
-    from test_controller import FakeHA, TWO_CHILDREN, build_controller
-
-    controller = build_controller(tmp_path, FakeHA(), children=TWO_CHILDREN)
-    sick = SimpleNamespace(snapshot=lambda: {
-        "date": "2026-10-29", "valid_until": "", "notice": "",
-        "children": [{"slug": "alma", "name": "Alma", "sick": False, "can_report": True}]})
-    siri = SiriConnector(controller, sick)
-    assert siri.command({"action": "sick_status", "child": "alma"})["sick"] is False
-    with pytest.raises(LookupError):
-        siri.command({"action": "sick_status", "child": "noah"})
-
-
 def test_notification_job_queued_while_worker_times_out_is_still_delivered(tmp_path):
     from aula_ui.notifications import Notifier
     from test_controller import FakeHA, build_controller

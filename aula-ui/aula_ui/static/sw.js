@@ -1,8 +1,8 @@
 "use strict";
 // Bump VERSION with each release so clients drop the old offline cache.
-const VERSION = "v1.9.57";
+const VERSION = "v1.9.58";
 const CACHE = `aula-shell-${VERSION}`;
-const SHELL = ["style.css", "app.js", "account.js", "notifications.js", "ai-settings.js", "siri.js", "sync-settings.js", "pwa.js", "theme.js",
+const SHELL = ["style.css", "app.js", "account.js", "notifications.js", "ai-settings.js", "sync-settings.js", "pwa.js", "theme.js",
   "icon.svg", "offline.html", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 const scopeUrl = new URL(self.registration.scope);
 const scopePath = scopeUrl.pathname;

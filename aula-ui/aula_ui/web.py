@@ -59,9 +59,7 @@ def _reading_item(controller: Any, item_id: str) -> dict | None:
 def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP,
                  access: AccessVerifier | None = None) -> ThreadingHTTPServer:
     from .sickness import SickDays
-    from .siri import SiriConnector
     sick_days = SickDays(controller)
-    siri = SiriConnector(controller, sick_days)
     cfg = getattr(controller, "config", None)
     mcp = McpEndpoint(controller, sick_days, getattr(cfg, "mcp_key", ""), getattr(cfg, "mcp_allow_writes", False))
     class Handler(BaseHTTPRequestHandler):
@@ -81,7 +79,6 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     known = {"/", "/account", "/calendar.ics", "/api/feed", "/api/account",
                              "/api/profiles", "/api/ai-settings", "/api/feed/reprocess", "/api/feed/reading",
                              "/api/feed/attachment", "/api/feed/media", "/api/sickness",
-                             "/api/siri/settings", "/api/siri/command", "/siri.js",
                              "/api/sync-settings", "/sync-settings.js",
                              "/api/notifications", "/api/notifications/test", "/api/notifications/history",
                              "/api/notifications/read", "/notifications.js",
@@ -250,9 +247,6 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             if path == "/api/whoami":
                 self._send(json.dumps({"user": getattr(self, "_identity", "")}).encode(),
                            "application/json; charset=utf-8")
-                return
-            if path == "/api/siri/settings":
-                self._send(json.dumps(siri.settings()).encode(), "application/json")
                 return
             if path == "/api/sickness":
                 try:
@@ -457,7 +451,6 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                 "/": ("index.html", "text/html"),
                 "/app.js": ("app.js", "text/javascript"),
                 "/ai-settings.js": ("ai-settings.js", "text/javascript"),
-                "/siri.js": ("siri.js", "text/javascript"),
                 "/sync-settings.js": ("sync-settings.js", "text/javascript"),
                 "/notifications.js": ("notifications.js", "text/javascript"),
                 "/style.css": ("style.css", "text/css"),
@@ -476,42 +469,8 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             else:
                 self._send_static((STATIC / filename).read_bytes(), mime + "; charset=utf-8")
 
-        def _siri_command(self) -> None:
-            self._ingress = self.client_address[0] == allowed_ip
-            authorization = self.headers.get("Authorization", "")
-            token = authorization.removeprefix("Bearer ") if authorization.startswith("Bearer ") else ""
-            if not controller.profiles.verify_siri_key(token):
-                self._send(b'{"error":"Siri key is missing, invalid or revoked","speech":"Siri key is missing, invalid or revoked"}', "application/json", 401)
-                return
-            if not siri.admit():
-                self._send(b'{"error":"Too many Siri requests. Wait a minute.","speech":"Too many Siri requests. Wait a minute."}', "application/json", 429)
-                return
-            try:
-                length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 1024:
-                    raise ValueError("Supply a JSON command (maximum 1024 bytes)")
-                result = siri.command(json.loads(self.rfile.read(length)))
-            except (ValueError, UnicodeDecodeError) as error:
-                self._send(json.dumps({"error": str(error), "speech": str(error)}).encode(), "application/json", 400)
-                return
-            except PermissionError as error:
-                self._send(json.dumps({"error": str(error), "speech": str(error)}).encode(), "application/json", 403)
-                return
-            except LookupError as error:
-                self._send(json.dumps({"error": str(error), "speech": str(error)}).encode(), "application/json", 404)
-                return
-            except AulaApiError as error:
-                _LOGGER.warning("Siri command could not be completed: %s", describe(error))
-                message = "Aula could not confirm this action. Check the app before retrying."
-                self._send(json.dumps({"error": str(error), "speech": message}).encode(), "application/json", 502)
-                return
-            self._send(json.dumps(result).encode(), "application/json")
-
         def do_POST(self) -> None:
             if self._mcp_request(post=True):
-                return
-            if self.path.split("?", 1)[0] == "/api/siri/command":
-                self._siri_command()
                 return
             if not self._authorized():
                 return
@@ -519,28 +478,6 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             # from initiating work through an authenticated ingress session.
             if self.headers.get("X-Aula-Request") not in ("refresh", "settings"):
                 self.send_error(403)
-                return
-            if self.path == "/api/siri/settings":
-                if self.headers.get("X-Aula-Request") != "settings":
-                    self.send_error(403)
-                    return
-                try:
-                    length = int(self.headers.get("Content-Length", "0"))
-                    if not 0 < length <= 128:
-                        raise ValueError("Choose generate or revoke")
-                    value = json.loads(self.rfile.read(length))
-                    if (not isinstance(value, dict) or set(value) != {"action"}
-                            or value["action"] not in ("generate", "revoke")):
-                        raise ValueError("Choose generate or revoke")
-                    token = controller.profiles.set_siri_key(value["action"] == "generate")
-                except (ValueError, UnicodeDecodeError) as error:
-                    self._send(json.dumps({"error": str(error)}).encode(), "application/json", 400)
-                    return
-                except OSError:
-                    _LOGGER.error("Siri key could not be saved")
-                    self._send(b'{"error":"Siri key could not be saved"}', "application/json", 500)
-                    return
-                self._send(json.dumps({**siri.settings(), "key": token}).encode(), "application/json")
                 return
             if self.path == "/api/sickness":
                 if self.headers.get("X-Aula-Request") != "settings":

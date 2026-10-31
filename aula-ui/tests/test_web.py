@@ -41,6 +41,13 @@ def test_version_endpoint_and_page_stamp(server):
     assert f'<meta name="aula-version" content="{__version__}">' in requests.get(server, timeout=5).text
 
 
+def test_retired_siri_endpoints_are_not_served(server):
+    assert requests.get(server + "/api/siri/settings", timeout=5).status_code == 404
+    response = requests.post(server + "/api/siri/command", json={"action": "recap"},
+                             headers={"X-Aula-Request": "settings"}, timeout=5)
+    assert response.status_code == 404
+
+
 def test_refresh_requires_same_origin_header(server):
     assert requests.post(server + "/api/refresh", timeout=5).status_code == 403
     assert requests.post(server + "/api/refresh", headers={"X-Aula-Request": "refresh"},

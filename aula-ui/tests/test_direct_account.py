@@ -289,11 +289,14 @@ def test_legacy_profile_pins_institution_type_without_guessing_from_slug(tmp_pat
         fresh.close()
     legacy = tmp_path / "legacy"
     legacy.mkdir()
-    (legacy / "profiles.json").write_text(json.dumps({"children": {}, "calendar_token": "existing-subscription"}))
+    (legacy / "profiles.json").write_text(json.dumps({
+        "children": {}, "calendar_token": "existing-subscription", "siri_key_hash": "retired-key-hash",
+    }))
     migrated = create_controller(legacy, children)
     try:
         assert migrated.profiles.snapshot()[0]["institution_type"] == "school"
         assert migrated.profiles.data["profile_version"] == 2
+        assert "siri_key_hash" not in migrated.profiles.data
         assert migrated.profiles.calendar_path.endswith("existing-subscription.ics")
     finally:
         migrated.close()

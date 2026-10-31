@@ -3,13 +3,13 @@
 Aula UI works out of the box through Home Assistant ingress (the sidebar
 panel). This guide is only needed if you want to open the app directly on its
 own hostname, for example to install it as a standalone PWA on a phone,
-receive Web Push deep links, or let Apple Shortcuts reach the Siri connector.
+receive Web Push deep links, or connect an MCP client.
 
 The examples use `aula.example.com` and a Cloudflare Tunnel; replace them with
 your own hostname. Cloudflare Access sits in front of the app, and the add-on
 additionally validates the `Cf-Access-Jwt-Assertion` header itself, so a
 request that bypasses Access is rejected (403), except the independently
-token-authenticated calendar and Siri endpoints described below. Without the
+token-authenticated calendar and MCP endpoints described below. Without the
 Access options configured, normal app routes only serve Home Assistant
 ingress.
 
@@ -88,20 +88,8 @@ on the hostname stays protected. The add-on serves only the exact current
 secret-token `.ics` path without a JWT (wrong or rotated tokens get 404) and
 still requires Access for normal app routes.
 
-## 3c. Siri connector path
 
-The optional Siri connector needs one additional exact-path self-hosted Access application:
-
-1. Application hostname: your app hostname, path **`api/siri/command`** (no wildcard).
-2. Policy: **Bypass**, include **Everyone**. More-specific path applications take precedence over the app-wide application.
-3. Keep the main Aula UI application and every other path protected. Do not bypass `/api/*` or `/api/siri/*`.
-4. In Aula UI → Settings → Siri & Shortcuts, create a key. Each shortcut sends it only in `Authorization: Bearer ...`.
-5. Test without a key: a POST to this path must return JSON HTTP **401**, not a login redirect, page content, or successful response. With the key, a read-only `recap` request should return JSON with `speech`. Do not test by reporting a child sick.
-
-Unlike ordinary app APIs, this exact POST path validates the separate connector key instead of an Access JWT. The key is disabled by default, stored hashed, revocable and limited to the supported Siri commands. GET requests and all settings routes still require normal app authentication. If the connector is disabled, leave the path rule in place or remove it; no keyless command is accepted either way.
-
-
-## 3d. MCP connector path
+## 3c. MCP connector path
 
 The optional MCP endpoint lets assistants such as claude.ai read the family's Aula data and (optionally) report sickness. Connectors can only carry a URL, so the key is part of the path.
 
