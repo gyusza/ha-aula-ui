@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.57
+
+- Added an MCP endpoint at `/mcp/<mcp_key>` for remote connectors such as claude.ai.
+  Set `mcp_key` (32+ chars) to enable it; `mcp_allow_writes` adds `report_sickness`.
+  The Siri connector is kept.
+
 ## 1.9.55
 
 - Removed album multi-select tagging; tag photos from the full-size viewer.
