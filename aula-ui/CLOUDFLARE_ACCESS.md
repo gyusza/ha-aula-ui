@@ -100,6 +100,16 @@ The optional Siri connector needs one additional exact-path self-hosted Access a
 
 Unlike ordinary app APIs, this exact POST path validates the separate connector key instead of an Access JWT. The key is disabled by default, stored hashed, revocable and limited to the supported Siri commands. GET requests and all settings routes still require normal app authentication. If the connector is disabled, leave the path rule in place or remove it; no keyless command is accepted either way.
 
+
+## 3d. MCP connector path
+
+The optional MCP endpoint lets assistants such as claude.ai read the family's Aula data and (optionally) report sickness. Connectors can only carry a URL, so the key is part of the path.
+
+1. In the add-on options set **mcp_key** (32-128 characters of `A-Za-z0-9_-`, e.g. `openssl rand -hex 24`). Leave empty to disable. Set **mcp_allow_writes** to also offer `report_sickness`.
+2. Add a self-hosted Access application for `<host>/mcp/*` with a **Bypass** policy for **Everyone**; more-specific path applications take precedence over the app-wide one.
+3. Add `https://<host>/mcp/<mcp_key>` as a custom connector.
+
+Requests to `/mcp/` validate the key (constant-time) instead of an Access JWT; a wrong key gets 404, requests are limited to 60 per minute, and no other route accepts the key. Treat the URL like a password and rotate it by changing the option and restarting the app.
 ## 4. Values for the add-on
 
 - **Team domain**: Zero Trust → **Settings → Custom pages**, or the top of

@@ -546,6 +546,8 @@ AI Task.
 | `access_team_domain` | empty | Cloudflare Access team domain, e.g. `myteam.cloudflareaccess.com`. |
 | `access_aud` | empty | Application Audience (AUD) tag of the Access app. |
 | `access_allowed_emails` | empty | Emails allowed through public access (see CLOUDFLARE_ACCESS.md). |
+| `mcp_key` | empty | Enables the MCP endpoint `/mcp/<key>` (32-128 chars of `A-Za-z0-9_-`). Empty disables it. |
+| `mcp_allow_writes` | `false` | Adds the `report_sickness` MCP tool. |
 | `public_url` | empty | Optional public base URL (e.g. `https://aula.example.com`) used for notification deep links and the calendar subscription URL. When empty, notifications open the Home Assistant sidebar panel and the calendar URL is built from the address you opened the app with. |
 
 Children are discovered after account login; their names, institution type and

@@ -32,6 +32,8 @@ options:
   access_aud: ""
   access_allowed_emails: []
   public_url: ""
+  mcp_key: ""
+  mcp_allow_writes: false
 schema:
   timezone: str
   event_lookahead_days: int(1,120)
@@ -43,6 +45,8 @@ schema:
   access_allowed_emails:
     - email?
   public_url: str?
+  mcp_key: password?
+  mcp_allow_writes: bool?
   anthropic_api_key: password?
   anthropic_model: str?
   google_api_key: password?

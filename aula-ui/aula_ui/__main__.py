@@ -69,6 +69,7 @@ def main() -> int:
 
     _setup_logging(config.log_level, config.log_color)
     protect(config.ha_token)
+    protect(config.mcp_key)
     _LOGGER.info("event=application.start version=%s log_level=%s source=%s",
                  __version__, config.log_level, config.data_source)
     install_bridge()

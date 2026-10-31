@@ -45,7 +45,7 @@ def test_app_schema_only_offers_necessary_options():
     assert set(config["schema"]) == set(config["options"]) | AI_KEY_OPTIONS
     assert set(config["options"]) == {
         "event_lookahead_days", "thread_pages", "log_level", "log_color",
-        "access_team_domain", "access_aud", "access_allowed_emails", "public_url", "timezone",
+        "access_team_domain", "access_aud", "access_allowed_emails", "public_url", "timezone", "mcp_key", "mcp_allow_writes",
     }
     assert all(config["schema"][key] in ("password?", "str?") for key in AI_KEY_OPTIONS)
     assert config["options"]["timezone"] == "Europe/Copenhagen"

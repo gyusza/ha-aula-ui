@@ -21,6 +21,7 @@ import requests
 from .diagnostics import TRACE, correlation, describe
 from . import notifications
 from .access import AccessVerifier
+from .mcp import MAX_BODY as MCP_MAX_BODY, McpEndpoint
 from . import __version__
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,6 +62,8 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
     from .siri import SiriConnector
     sick_days = SickDays(controller)
     siri = SiriConnector(controller, sick_days)
+    cfg = getattr(controller, "config", None)
+    mcp = McpEndpoint(controller, sick_days, getattr(cfg, "mcp_key", ""), getattr(cfg, "mcp_allow_writes", False))
     class Handler(BaseHTTPRequestHandler):
         timeout = REQUEST_TIMEOUT
         server_version = "AulaUI"
@@ -91,6 +94,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     route = path if path in known else (
                         "/spa" if SPA_RE.match(path) else
                         "/api/aula_calendar/:token" if path.startswith("/api/aula_calendar/") else
+                        "/mcp/:key" if path.startswith("/mcp/") else
                         "/api/profiles/:child" if path.startswith("/api/profiles/") else
                         "/api/avatars/:child" if path.startswith("/api/avatars/") else "unknown")
                     level = logging.WARNING if self._log_status >= 400 else (
@@ -196,7 +200,45 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             if not self._send_subscription(head=True):
                 self.send_error(405)
 
+        def _mcp_request(self, post: bool) -> bool:
+            """Serve the secret-path MCP endpoint; every other path is left to the normal routes."""
+            path = self.path.split("?", 1)[0]
+            if not path.startswith("/mcp/"):
+                return False
+            self._ingress = self.client_address[0] == allowed_ip
+            if not mcp.authorize(path):
+                self.send_error(404)
+                return True
+            if not post:
+                self.send_response(405)
+                self.send_header("Allow", "POST")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return True
+            if not mcp.admit():
+                self._send(b'{"error":"Too many MCP requests. Wait a minute."}', "application/json", 429)
+                return True
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MCP_MAX_BODY:
+                    raise ValueError("Supply a JSON-RPC message")
+                message = json.loads(self.rfile.read(length))
+            except (ValueError, UnicodeDecodeError):
+                self._send(b'{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error"}}',
+                           "application/json", 400)
+                return True
+            reply = mcp.handle(message)
+            if reply is None:
+                self.send_response(202)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                self._send(json.dumps(reply, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+            return True
+
         def do_GET(self) -> None:
+            if self._mcp_request(post=False):
+                return
             if self._send_subscription():
                 return
             if not self._authorized():
@@ -466,6 +508,8 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             self._send(json.dumps(result).encode(), "application/json")
 
         def do_POST(self) -> None:
+            if self._mcp_request(post=True):
+                return
             if self.path.split("?", 1)[0] == "/api/siri/command":
                 self._siri_command()
                 return

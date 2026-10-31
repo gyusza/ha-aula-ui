@@ -20,6 +20,17 @@ configuration:
       Optional. Base URL where the app is published outside Home Assistant
       (e.g. https://aula.example.com), used for notification deep links and the
       calendar subscription URL. Leave empty when using only the sidebar panel.
+  mcp_key:
+    name: MCP key
+    description: >-
+      Optional. 32-128 letters, digits, "-" or "_" (for example the output of
+      "openssl rand -hex 24"). Enables the MCP endpoint at /mcp/<key> for
+      assistants such as claude.ai; publish the app (see CLOUDFLARE_ACCESS.md
+      section on MCP) and add https://<your host>/mcp/<key> as a connector.
+      Anyone with the URL can read the family's Aula data. Leave empty to disable.
+  mcp_allow_writes:
+    name: MCP may report sickness
+    description: Let MCP clients report or withdraw sickness for today. Off by default.
   access_team_domain:
     name: Cloudflare Access team domain
     description: Optional. e.g. myteam.cloudflareaccess.com. Only needed when publishing via Cloudflare Access.
