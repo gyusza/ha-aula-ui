@@ -1,5 +1,7 @@
 """Validated, persistent UI settings independent of the poller's state store."""
 
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -61,7 +63,6 @@ class Profiles:
         self.data = {"children": {}, "calendar_token": secrets.token_urlsafe(32), "profile_version": 2}
         if self.path.exists():
             self.data = json.loads(self.path.read_text())
-        self.data.pop("siri_key_hash", None)
         for settings in self.data.get("children", {}).values():
             settings.pop("timezone", None)
         self._children = self._resolve_children(config.children)
@@ -288,6 +289,30 @@ class Profiles:
         with self.lock:
             protect(self.data["calendar_token"])
             return "/api/aula_calendar/" + self.data["calendar_token"] + ".ics"
+
+    def siri_enabled(self):
+        with self.lock:
+            return bool(self.data.get("siri_key_hash"))
+
+    def verify_siri_key(self, token):
+        if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
+            return False
+        with self.lock:
+            expected = self.data.get("siri_key_hash", "")
+            return bool(expected) and hmac.compare_digest(expected, hashlib.sha256(token.encode()).hexdigest())
+
+    def set_siri_key(self, enabled):
+        token = secrets.token_urlsafe(32) if enabled else ""
+        protect(token)
+        with self.lock:
+            previous = self.data.get("siri_key_hash", "")
+            self.data["siri_key_hash"] = hashlib.sha256(token.encode()).hexdigest() if token else ""
+            try:
+                self.save()
+            except OSError:
+                self.data["siri_key_hash"] = previous
+                raise
+        return token
 
     def rotate_calendar_token(self):
         with self.lock:

@@ -553,8 +553,11 @@ async def check_pdf_download(page, link, controller, pdf):
     controller.store.set("feed", [{"id": "post:42"}])
     try:
         with pytest.MonkeyPatch.context() as patch:
-            patch.setattr("aula_ui.web.feed_attachment", lambda *args, **kwargs: (
-                {"name": "Guide.pdf"}, pdf, "application/pdf"))
+            patch.setattr("aula_ui.web._call", lambda *args: {"data": {"attachments": [
+                {"name": "Guide.pdf", "file": {"url": "https://media-prod.aula.dk/file"}}
+                for _ in range(4)
+            ]}})
+            patch.setattr("aula_ui.web.download_attachment", lambda attachment: (pdf, "application/pdf"))
             async with page.expect_download() as downloaded:
                 await link.click()
             download = await downloaded.value
@@ -658,30 +661,43 @@ async def sync_settings_page(browser, url):
         scratch.cleanup()
 
 
-async def mcp_settings(browser, url):
+async def siri_settings(browser, url):
     page = await browser.new_page(viewport={"width": 390, "height": 844})
-    reads = []
+    writes = []
+    settings = {
+        "enabled": False, "endpoint": "https://aula.example/api/siri/command",
+        "children": [{"id": "alma", "name": "Alma"}, {"id": "noah", "name": "Noah"}],
+    }
+
+    async def api(route):
+        body = dict(settings)
+        if route.request.method == "POST":
+            value = route.request.post_data_json
+            assert route.request.headers["x-aula-request"] == "settings"
+            writes.append(value)
+            settings["enabled"] = value["action"] == "generate"
+            body = {**settings, "key": "x" * 43 if settings["enabled"] else ""}
+        await route.fulfill(json=body)
+
     await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [], "children": []}))
-    async def profiles(route):
-        reads.append(route.request.method)
-        await route.fulfill(json={
-            "children": [], "mcp_url": "https://aula.example/mcp", "events": [],
-            "archived_events": [], "recommendations": [], "declined_recommendations": [],
-            "calendar_count": 0, "calendar_categories": [], "recognition_warnings": [],
-            "extraction_available": True,
-        })
-    await page.route("**/api/profiles", profiles)
+    await page.route("**/api/siri/settings", api)
     try:
-        await page.goto(url + "#profiles", wait_until="networkidle")
-        await page.get_by_role("link", name="MCP connector ›").click()
-        endpoint = page.get_by_label("Cloudflare Access endpoint")
-        await endpoint.wait_for()
-        assert await endpoint.input_value() == "https://aula.example/mcp"
-        assert await page.get_by_text("no connector key is issued", exact=False).is_visible()
-        assert await page.get_by_text("the client must ask for your confirmation", exact=False).is_visible()
-        assert reads and set(reads) == {"GET"}
-        width = await page.evaluate("document.documentElement.scrollWidth")
-        assert width <= 390, width
+        await page.goto(url + "#siri-settings", wait_until="networkidle")
+        await page.get_by_role("button", name="Create Siri key").wait_for()
+        assert writes == []
+        assert await page.get_by_label("Siri endpoint", exact=True).input_value() == settings["endpoint"]
+        await page.get_by_role("button", name="Create Siri key").click()
+        key = page.get_by_label("New Siri key (shown once)", exact=True)
+        await key.wait_for()
+        assert await key.input_value() == "x" * 43 and await key.get_attribute("type") == "password"
+        assert writes == [{"action": "generate"}]
+        await page.get_by_text("Mark a child sick today", exact=True).click()
+        assert await page.get_by_text("Only in Confirm", exact=False).is_visible()
+        assert await page.get_by_text("Available child IDs:", exact=False).is_visible()
+        await page.get_by_role("button", name="Disable Siri connector").click()
+        await page.get_by_text("Connector disabled. Previous keys no longer work.", exact=True).wait_for()
+        assert await key.count() == 0
+        assert writes[-1] == {"action": "revoke"}
     finally:
         await page.close()
 
@@ -1747,7 +1763,7 @@ async def verify():
                     await post_photo_grid(browser, url)
                     await album_tagging(browser, url)
                     await sickness_reporting(browser, url)
-                    await mcp_settings(browser, url)
+                    await siri_settings(browser, url)
                     await sync_settings_page(browser, url)
                     await mark_read_on_open(browser, url)
                     await notification_history(browser, url)

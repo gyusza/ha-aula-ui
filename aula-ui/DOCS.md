@@ -339,20 +339,21 @@ budget; the guardrails above still apply whatever you choose. **Restore
 defaults** resets every value. The former `poll_interval` add-on option is
 removed; an existing non-default value is migrated once into Full sync.
 
-### MCP connector
+### Siri & Shortcuts
 
-The MCP server is built into the add-on at **`/mcp`**. Open Settings → **MCP
-connector** to see the Cloudflare Access endpoint when `public_url` is
-configured. MCP requests use the same Home Assistant ingress or Cloudflare
-Access authentication as the rest of the app; do not create an Access bypass
-or share an ingress URL containing its session token. No extra Aula login,
-Home Assistant long-lived token, or connector key is used.
+Settings → **Siri & Shortcuts** creates a separate connector key (shown once, only its hash is stored). Replace or disable it there to revoke existing shortcuts. The key permits only cached post recaps, current sickness status, and explicitly confirmed today-only sickness reports. It does not grant access to settings, messages, photos or arbitrary Aula methods. Keep the key inside personal shortcuts; never publish it or include it in a URL.
 
-The tools read the cached family feed, full message threads, calendar,
-presence, albums and attachments. `refresh` only queues the add-on's normal
-sync. `report_sickness` can write to Aula only after the client asks for
-confirmation of the child, action and current date; Aula permissions and
-today-only checks are enforced again by the add-on.
+The connector endpoint is `POST /api/siri/command`, with `Authorization: Bearer YOUR_KEY` and a JSON body. It returns a `speech` field suitable for Shortcuts' **Get Dictionary Value → speech → Speak Text**. Siri invokes a personal shortcut by its name; this PWA is not a native App Intents app and cannot itself register arbitrary Siri phrases.
+
+The examples below use a child called Emma with the child ID `emma`; use the child IDs listed in Siri settings.
+
+For **“Recap the latest posts for Emma”**, create a shortcut with that name. Add **Get Contents of URL**, use the URL shown in Siri settings, method POST, Authorization header above, and JSON body `{"action":"recap","child":"emma","count":3}`. Read `speech` and speak it. Up to five posts are supported, filtered to that child and newest first. Existing summaries are read without new AI/Aula calls; missing summaries use the original text with a spoken warning.
+
+For **“Mark Emma sick for the day”**, first POST `{"action":"sick_status","child":"emma"}`. Use the returned server-local `date` (not a hardcoded/device-local date). If `can_report` is false, speak `reason` and stop; if `sick` is true, speak `speech` and stop. Otherwise show a **Choose from Menu** confirmation including the child's name, date and `notice`. Only the Confirm branch may POST `{"action":"sick_today","child":"emma","date":"DATE_VARIABLE_FROM_FIRST_RESPONSE","confirmed":true}`. `confirmed` must be a Boolean. Cancel stops the shortcut without a write. Speak the second response's `speech`. On errors, announce the error and stop rather than claiming success.
+
+The second request reuses the same permission checks, Aula request budget and one-day calendar recording as the calendar action. Stale dates are rejected and no next-day recurrence is scheduled. Shortcuts/Siri may require unlocking the phone. Recaps reveal school information aloud, so run them only where appropriate.
+
+**External access setup required:** Apple Shortcuts cannot use the app's interactive Cloudflare login. Create a separate self-hosted Access application for the **exact** `<app-host>/api/siri/command` path with a **Bypass / Everyone** policy, as described in `CLOUDFLARE_ACCESS.md`. The add-on itself requires the connector Bearer key on this one path. All other app paths remain under Access. Until that rule is configured, external shortcuts will hit the login page rather than the connector.
 
 The settings gear contains account login, child profiles and calendar
 subscription preferences, not an archive or review queue.

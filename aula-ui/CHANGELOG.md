@@ -1,15 +1,5 @@
 # Changelog
 
-## 1.9.56
-
-- Added a stateless Streamable HTTP MCP endpoint at `/mcp`, authenticated by
-  the add-on's existing Home Assistant ingress or Cloudflare Access checks.
-- Moved the feed, thread, calendar, presence, gallery, attachment, sickness
-  status and refresh tools into the add-on, reusing its cached data and Aula
-  session. Sickness writes require explicit user confirmation.
-- Replaced the Siri connector and its separate key with MCP connection details
-  in Settings; removed Siri-specific routes, UI, stored keys and setup docs.
-
 ## 1.9.55
 
 - Removed album multi-select tagging; tag photos from the full-size viewer.

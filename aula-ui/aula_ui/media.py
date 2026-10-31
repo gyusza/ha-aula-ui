@@ -1,7 +1,7 @@
 """Preserve Aula attachment metadata without interpreting embedded HTML."""
 
 from html.parser import HTMLParser
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlsplit
 import requests
 
 from .avatars import sniff
@@ -94,40 +94,3 @@ def attachments(raw, body=""):
     if not result and (raw.get("hasAttachments") or raw.get("attachmentCount")):
         result.append({"name": "Attachments reported by Aula", "kind": "unknown", "url": ""})
     return result
-
-
-def feed_attachment(client, item, item_id, index, message_id="", fetch_messages=None,
-                    call=None, download=None):
-    """Resolve and download an attachment from one cached feed item."""
-    from .aula_api import AulaApiError, _call, fetch_thread_messages
-
-    fetch_messages = fetch_messages or fetch_thread_messages
-    call = call or _call
-    download = download or download_attachment
-    if not isinstance(index, int) or isinstance(index, bool) or index < 0:
-        raise ValueError("Invalid attachment index")
-    media = item.get("attachments", [])
-    if message_id:
-        if not item_id.startswith("thread:") or not any(
-                str(message.get("id")) == message_id for message in item.get("thread_messages", [])):
-            raise ValueError("Message unavailable")
-        messages = fetch_messages(client, item_id.removeprefix("thread:"))
-        message = next((row for row in messages if str(row.get("id")) == message_id), None)
-        if message is None:
-            raise ValueError("Message unavailable")
-        media = message.get("attachments", [])
-    elif item_id.startswith("post:"):
-        raw = call(client, "?" + urlencode({
-            "method": "posts.getById", "id": item_id.removeprefix("post:"),
-        })).get("data")
-        if not isinstance(raw, dict):
-            raise AulaApiError("Aula returned no post details")
-        content = raw.get("content") or {}
-        media = attachments(raw, content.get("html", "") if isinstance(content, dict) else content)
-    if not isinstance(media, list) or index >= len(media):
-        raise ValueError("Attachment unavailable")
-    attachment = media[index]
-    if not isinstance(attachment, dict):
-        raise ValueError("Attachment unavailable")
-    data, content_type = download(attachment)
-    return attachment, data, content_type
