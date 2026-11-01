@@ -975,7 +975,7 @@ function card(item, {detail = false} = {}) {
       image.alt = "";
       image.loading = "lazy";
       image.decoding = "async";
-      image.src = `api/gallery/image?album=${encodeURIComponent(item.album.id)}&cover=${index}`;
+      image.src = `api/gallery/image?album=${encodeURIComponent(item.album.id)}&cover=${index}&v=${encodeURIComponent(item.date || "")}`;
       image.addEventListener("error", () => image.remove(), {once: true});
       covers.append(image);
     }
@@ -1679,7 +1679,15 @@ function attachmentSection(attachments, item = null, message = null) {
         caption.textContent = `${attachment.name || "Image"} — Image unavailable here. Open this post in Aula to view it.`;
         figure.append(caption);
       }, {once: true});
-      image.src = attachment.url;
+      if (item) {
+        const source = new URL(attachment.url);
+        const previewQuery = new URLSearchParams(shareQuery);
+        previewQuery.set("preview", "1");
+        previewQuery.set("source", source.origin + source.pathname);
+        image.src = `api/feed/attachment?${previewQuery}`;
+      } else {
+        image.src = attachment.url;
+      }
       open.append(image);
       figure.append(open);
       figure.className = "album-photo-tile";

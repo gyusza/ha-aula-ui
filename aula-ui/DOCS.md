@@ -194,8 +194,16 @@ summary, displaying 10 replies initially and 10 more with each Show more action,
 retaining authors, timestamps and per-message originals. Original
 content stays readable while translation is pending or temporarily unavailable.
 
-Post details display images using Aula's HTTPS image links, refreshing attachment
-links from the original post when opened. Message attachments are also retained.
+Post details refresh attachment links from the original post when opened.
+Album covers, album thumbnails and post/message image tiles load through the
+authenticated add-on and reuse a private disk cache in `/data/image-previews`.
+Preview bytes survive restarts, expire after seven days, and are limited to
+128 MB and 512 images (oldest entries are removed first). Signed Aula URL
+credentials are not stored in cache filenames. Post previews reuse the supplied
+image bytes without resizing; full-size viewers and original downloads retain
+their existing behavior. A cache miss fetches from Aula; failed or non-image
+responses are never saved as successful previews. These private images are not
+stored in the service worker's offline shell cache. Message attachments are also retained.
 Post images use the same compact, square photo grid as albums, with **Save all
 photos** to save them together. Child-tagging controls remain album-only.
 Clicking a thumbnail opens a full-width viewer with the standard Share action

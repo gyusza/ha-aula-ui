@@ -991,8 +991,13 @@ async def post_photo_grid(browser, url):
         await page.wait_for_function("() => window.__photoBatches.length === 1")
         assert await page.evaluate("window.__photoBatches[0]") == [
             {"name": photo["name"], "type": "image/png"} for photo in photos]
-        assert len(requests_seen) == 3
-        for index, request in enumerate(requests_seen):
+        previews = [request for request in requests_seen if "preview=1" in request]
+        originals = [request for request in requests_seen if "preview=1" not in request]
+        assert len(previews) == len(originals) == 3
+        assert await grid.locator("img").evaluate_all(
+            "images => images.every(image => new URL(image.src).origin === location.origin && image.src.includes('preview=1'))"
+        )
+        for index, request in enumerate(originals):
             assert "id=post%3Agrid" in request and f"index={index}" in request
         await grid.get_by_role("button", name="View Photo 1.png full width", exact=True).click()
         await page.get_by_role("dialog", name="Photo 1.png", exact=True).wait_for()

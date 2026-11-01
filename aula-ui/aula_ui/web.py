@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlencode, quote
 from .aula_api import AulaApiError, _call, fetch_thread_messages
 from . import gallery
 from .media import attachments, download_attachment
+from .previews import PreviewCache, source_key
 import requests
 from .diagnostics import TRACE, correlation, describe
 from . import notifications
@@ -61,6 +62,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
     from .sickness import SickDays
     sick_days = SickDays(controller)
     cfg = getattr(controller, "config", None)
+    previews = PreviewCache(cfg.data_dir) if cfg is not None and getattr(cfg, "data_dir", None) else None
     mcp = McpEndpoint(controller, sick_days, getattr(cfg, "mcp_key", ""), getattr(cfg, "mcp_allow_writes", False))
     class Handler(BaseHTTPRequestHandler):
         timeout = REQUEST_TIMEOUT
@@ -269,12 +271,25 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                                    "application/json")
                         return
                     name = ""
-                    if query.get("cover"):
-                        url = gallery.cover_url(client, children, album, int(query["cover"][0]))
+                    size = query.get("size", ["large"])[0]
+                    cover = query.get("cover", [""])[0]
+                    media_id = query.get("media", [""])[0]
+                    if (cover and not cover.isdigit()) or (not cover and (not media_id.isdigit() or size not in gallery.SIZES)):
+                        raise ValueError("Invalid photo")
+
+                    def load_image():
+                        nonlocal name
+                        if cover:
+                            url = gallery.cover_url(client, children, album, int(cover))
+                        else:
+                            url, name = gallery.media_url(client, children, album, media_id, size)
+                        return download_attachment({"url": url})
+
+                    if previews and query.get("download") != ["1"] and (cover or size in {"small", "medium", "thumb"}):
+                        key = f"album:{album}:{media_id}:{size}:{cover}:{query.get('v', [''])[0]}"
+                        data, content_type = previews.get_or_load(key, load_image)
                     else:
-                        url, name = gallery.media_url(client, children, album, query.get("media", [""])[0],
-                                                      query.get("size", ["large"])[0])
-                    data, content_type = download_attachment({"url": url})
+                        data, content_type = load_image()
                 except (ValueError, LookupError, AulaApiError, requests.RequestException) as error:
                     _LOGGER.warning("event=gallery.failed error_type=%s", type(error).__name__)
                     self._send(b'{"error":"Photos could not be loaded. Open the album in Aula."}',
@@ -313,28 +328,45 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     if index < 0:
                         raise ValueError("Invalid attachment index")
                     message_id = query.get("message", [""])[0]
-                    media = item.get("attachments", [])
                     if message_id:
                         if not item_id.startswith("thread:") or not any(
                                 str(message.get("id")) == message_id for message in item.get("thread_messages", [])):
                             raise ValueError("Message unavailable")
-                        messages = fetch_thread_messages(controller.source_client, item_id.removeprefix("thread:"))
-                        message = next((row for row in messages if str(row.get("id")) == message_id), None)
-                        if message is None:
-                            raise ValueError("Message unavailable")
-                        media = message.get("attachments", [])
-                    elif item_id.startswith("post:"):
-                        raw = _call(controller.source_client, "?" + urlencode({
-                            "method": "posts.getById", "id": item_id.removeprefix("post:"),
-                        })).get("data")
-                        if not isinstance(raw, dict):
-                            raise AulaApiError("Aula returned no post details")
-                        content = raw.get("content") or {}
-                        media = attachments(raw, content.get("html", "") if isinstance(content, dict) else content)
-                    if index >= len(media):
-                        raise ValueError("Attachment unavailable")
-                    attachment = media[index]
-                    data, content_type = download_attachment(attachment)
+                    preview = query.get("preview") == ["1"] and query.get("download") != ["1"]
+                    expected_source = query.get("source", [""])[0]
+                    if preview and not expected_source:
+                        raise ValueError("Supply the preview source")
+                    attachment = {}
+
+                    def load_attachment():
+                        nonlocal attachment
+                        media = item.get("attachments", [])
+                        if message_id:
+                            messages = fetch_thread_messages(controller.source_client, item_id.removeprefix("thread:"))
+                            message = next((row for row in messages if str(row.get("id")) == message_id), None)
+                            if message is None:
+                                raise ValueError("Message unavailable")
+                            media = message.get("attachments", [])
+                        elif item_id.startswith("post:"):
+                            raw = _call(controller.source_client, "?" + urlencode({
+                                "method": "posts.getById", "id": item_id.removeprefix("post:"),
+                            })).get("data")
+                            if not isinstance(raw, dict):
+                                raise AulaApiError("Aula returned no post details")
+                            content = raw.get("content") or {}
+                            media = attachments(raw, content.get("html", "") if isinstance(content, dict) else content)
+                        if index >= len(media):
+                            raise ValueError("Attachment unavailable")
+                        attachment = media[index]
+                        if preview and (attachment.get("kind") != "image" or source_key(attachment.get("url", "")) != expected_source):
+                            raise ValueError("Preview source changed; reopen the post")
+                        return download_attachment(attachment)
+
+                    if preview and previews:
+                        key = f"post:{item_id}:{message_id}:{index}:{expected_source}"
+                        data, content_type = previews.get_or_load(key, load_attachment)
+                    else:
+                        data, content_type = load_attachment()
                 except (ValueError, AulaApiError, requests.RequestException) as error:
                     _LOGGER.warning("event=media.download_failed error_type=%s", type(error).__name__)
                     self._send(b'{"error":"Attachment could not be opened. It may be unavailable, protected, or larger than 25 MB. Open the source in Aula."}',
@@ -342,7 +374,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     return
                 name = str(attachment.get("name") or "attachment")
                 disposition = "attachment" if query.get("download") == ["1"] or content_type == "application/octet-stream" else "inline"
-                self._send(data, content_type, extra_headers={
+                self._send(data, content_type, cache_control="private, max-age=1800" if preview else "no-store", extra_headers={
                     "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(name, safe='')}"})
                 return
             if path == "/api/feed/media":

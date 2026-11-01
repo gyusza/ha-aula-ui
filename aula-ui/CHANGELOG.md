@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.60
+
+- Cache album covers, album thumbnails and post/message image previews privately
+  inside the add-on. Repeat views reuse saved image bytes, including after a
+  restart, instead of downloading each preview from Aula again.
+- Previews expire after seven days; the cache is limited to 128 MB and 512
+  images. Full-size viewers and original downloads are unchanged, and failed
+  image loads are not cached as successful previews.
+
 ## 1.9.59
 
 - Added an MCP connector entry to Settings with the configured endpoint URL and
