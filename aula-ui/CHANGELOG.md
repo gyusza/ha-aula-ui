@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.61
+
+- Recover intermittent image failures with bounded retries. Retried previews
+  replace cached bytes and refresh Aula's signed image links; album tiles can
+  fall back to medium thumbnails if the small thumbnail remains unavailable.
+- Replace broken-image icons with an explicit unavailable message and Retry.
+  Covers, post images and full-size viewers also recover without losing image
+  navigation; failed post viewer images can retry through the add-on.
+
 ## 1.9.60
 
 - Cache album covers, album thumbnails and post/message image previews privately

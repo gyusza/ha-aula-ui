@@ -45,12 +45,14 @@ class PreviewCache:
             size -= length
             count -= 1
 
-    def get_or_load(self, key, load):
+    def get_or_load(self, key, load, refresh=False):
         digest = hashlib.sha256(key.encode()).hexdigest()
         path = self.directory / f"{digest}.img"
         with self.loads[int(digest[:2], 16) % len(self.loads)]:
             with self.lock:
                 try:
+                    if refresh:
+                        path.unlink(missing_ok=True)
                     if path.exists() and time.time() - path.stat().st_mtime < TTL:
                         data = path.read_bytes()
                         content_type = sniff(data[:16])

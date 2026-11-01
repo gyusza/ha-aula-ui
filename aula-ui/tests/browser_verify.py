@@ -813,7 +813,9 @@ async def album_tagging(browser, url):
     await page.route("**/api/gallery/album?*", lambda route: route.fulfill(json={
         "id": "77", "count": 2, "media": photos, "tag_choices": [{"slug": "maja", "name": "Maja"}],
     }))
-    await page.route("**/api/gallery/image?*", lambda route: route.fulfill(status=404, body=""))
+    await page.route("**/api/gallery/image?*", lambda route:
+                     route.fulfill(status=404, body="") if "size=original" in route.request.url
+                     else route.fulfill(body=PIXEL_PNG, content_type="image/png"))
     await page.route("**/api/gallery/tag", write)
     try:
         photos[1]["tagged_children"] = ["maja"]
@@ -880,6 +882,59 @@ async def album_tagging(browser, url):
         await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
         await page.get_by_role("dialog").get_by_role("button", name="Close", exact=True).wait_for()
         assert await page.locator(".image-viewer-tag").count() == 0
+    finally:
+        await page.close()
+
+
+async def image_recovery(browser, url):
+    page = await browser.new_page(viewport={"width": 390, "height": 844})
+    item = {"id": "album:77", "title": "Photo recovery", "content_type": "Album",
+            "date": "2026-11-01", "summary": "Photos", "children": [], "child_slugs": [],
+            "album": {"id": "77", "thumbs": 0}}
+    photos = [{"id": str(n), "type": "image", "name": f"Photo {n}",
+               "can_edit_tags": False, "tagged_children": []} for n in (1, 2, 3)]
+    calls = []
+    recover = False
+
+    async def image_request(route):
+        from urllib.parse import urlsplit, parse_qs
+        query = parse_qs(urlsplit(route.request.url).query)
+        calls.append(query)
+        photo, size = query["media"][0], query["size"][0]
+        good = (photo == "1" and query.get("retry") == ["1"]) or (
+            photo == "2" and size == "medium") or (photo == "3" and recover)
+        await route.fulfill(body=PIXEL_PNG if good else b"Broken image",
+                            content_type="image/png")
+
+    await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [item], "children": []}))
+    await page.route("**/api/gallery/album?*", lambda route: route.fulfill(json={
+        "id": "77", "count": 3, "media": photos, "tag_choices": [],
+    }))
+    await page.route("**/api/gallery/image?*", image_request)
+    try:
+        await page.goto(url + "#post/album%3A77", wait_until="networkidle")
+        await page.get_by_role("button", name="Retry Photo 3", exact=True).wait_for()
+        tiles = page.locator(".album-photo-tile")
+        assert await tiles.count() == 3
+        assert await tiles.nth(0).locator("img").evaluate("image => image.naturalWidth > 0")
+        assert await tiles.nth(1).locator("img").evaluate("image => image.naturalWidth > 0 && image.src.includes('size=medium')")
+        assert await tiles.nth(2).locator("img").evaluate("image => image.style.visibility === 'hidden'")
+        assert len([call for call in calls if call["media"] == ["3"]]) == 3
+        recover = True
+        await page.get_by_role("button", name="Retry Photo 3", exact=True).click()
+        await page.wait_for_function("() => document.querySelectorAll('.album-photo-tile img')[2].naturalWidth > 0")
+        assert await page.locator(".image-unavailable").count() == 0
+        await page.get_by_role("button", name="View Photo 1", exact=True).click()
+        viewer = page.get_by_role("dialog")
+        await page.wait_for_function("() => document.querySelector('.image-viewer-content img').naturalWidth > 0")
+        assert any(call["media"] == ["1"] and call["size"] == ["large"] and call.get("retry") == ["1"]
+                   for call in calls)
+        await page.keyboard.press("ArrowRight")
+        await viewer.get_by_role("button", name="Retry Photo 2", exact=True).wait_for()
+        await page.keyboard.press("ArrowRight")
+        await page.wait_for_function("() => document.querySelector('.image-viewer-content img').naturalWidth > 0")
+        assert await viewer.locator(".image-unavailable").count() == 0
+        await page.keyboard.press("Escape")
     finally:
         await page.close()
 
@@ -1087,8 +1142,9 @@ async def media_details(page, url, controller):
     assert await page.locator(".related-calendar .notice").count() == 0
     await page.locator(".related-calendar").get_by_text("Review details", exact=True).click()
     assert "Check the attached invitation" in await page.locator(".related-calendar").inner_text()
+    await page.get_by_text("Image unavailable here. Open in Aula.", exact=True).wait_for()
     assert await page.locator(".detail-media .album-photo img").evaluate_all(
-        "images => images.length === 1 && images[0].complete && images[0].naturalWidth > 0"
+        "images => images.filter(image => image.complete && image.naturalWidth > 0).length === 1"
     )
     assert "Image unavailable here" in await page.locator(".detail-media").inner_text()
     assert "no displayable image link" in await page.locator(".detail-media").inner_text()
@@ -1766,6 +1822,7 @@ async def verify():
                     await installed_ios_download(browser, url)
                     await post_photo_grid(browser, url)
                     await album_tagging(browser, url)
+                    await image_recovery(browser, url)
                     await mcp_settings(browser, url)
                     await sickness_reporting(browser, url)
                     await retired_siri_settings(browser, url)

@@ -441,6 +441,9 @@ summary{color:var(--muted);font-size:12px;cursor:pointer;min-height:34px}
 .album-photo-tile { min-width: 0; }
 .album-photo-tile > .album-photo { width: 100%; }
 .album-photo-tile { position: relative; }
+.album-cover-tile,.image-viewer-content { position: relative; }
+.image-unavailable { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 6px; background: var(--surface); color: var(--muted); font-size: 12px; text-align: center; border-radius: 8px; }
+.image-retry { padding: .3rem .6rem; font-size: 12px; }
 .album-tag-badges { position: absolute; left: 4px; top: 4px; display: flex; flex-wrap: wrap; gap: 3px; pointer-events: none; }
 .album-tag-badge { padding: 1px 6px; border-radius: 6px; background: rgba(0,0,0,.65); color: #8fc7ff; font-size: .7rem; }
 .sickness-toggle{display:flex;align-items:center;gap:6px;min-height:32px;margin:6px 0;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer}

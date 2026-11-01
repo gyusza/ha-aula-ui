@@ -235,10 +235,14 @@ def set_child_tag(client: Any, children: Any, album_id: str, media_id: str,
         return confirmed
 
 
-def media_url(client: Any, children: Any, album_id: str, media_id: str, size: str) -> tuple[str, str]:
+def media_url(client: Any, children: Any, album_id: str, media_id: str, size: str,
+              fresh: bool = False) -> tuple[str, str]:
     """Fresh signed URL (they expire within the hour) and download name for one album item."""
     if size not in SIZES:
         raise ValueError("Unknown size")
+    if fresh:
+        with _lock:
+            _cache.pop(("media", album_id), None)
     for row in _all_media(client, children, album_id)["results"]:
         if str(row.get("id")) == media_id:
             file = row.get("file") if isinstance(row.get("file"), dict) else {}
@@ -247,8 +251,8 @@ def media_url(client: Any, children: Any, album_id: str, media_id: str, size: st
     raise LookupError("Photo not found")
 
 
-def cover_url(client: Any, children: Any, album_id: str, index: int) -> str:
-    rows, _ = _album_rows(client, children)
+def cover_url(client: Any, children: Any, album_id: str, index: int, fresh: bool = False) -> str:
+    rows, _ = _album_rows(client, children, fresh=fresh)
     row = next((row for row in rows if str(row["id"]) == album_id), None)
     urls = (row or {}).get("thumbnailsUrls") or []
     if not 0 <= index < len(urls):

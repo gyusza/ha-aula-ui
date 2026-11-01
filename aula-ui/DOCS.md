@@ -210,7 +210,11 @@ Clicking a thumbnail opens a full-width viewer with the standard Share action
 and ‹ / › buttons (also arrow keys and swipe) to move to the previous or next
 image in the post or album; it closes with Close or Escape. The Close button stays below the phone's
 status bar, outside the scrolling image area.
-Missing links, failed image loads and other attachment types are explicitly
+Image loads retry a limited number of times before showing an unavailable
+message and **Retry** rather than a broken-image icon. Retrying through the
+add-on bypasses the preview cache and refreshes Aula's signed media links;
+album tiles also try the medium thumbnail if the small one fails.
+Missing links and other attachment types are explicitly
 labelled with instructions to view them in Aula. Images are not sent to the AI:
 summaries and extracted events cover text only and may omit image-only details.
 The calendar agenda runs chronologically from the earliest to the latest date

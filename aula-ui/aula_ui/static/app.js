@@ -20,6 +20,62 @@ function el(tag, cls, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+const imageLoads = new WeakMap();
+function loadImage(image, url, container, fallbackUrl = "", message = "Image unavailable here. Open in Aula.") {
+  imageLoads.get(image)?.();
+  let timer = null;
+  let notice = null;
+  let cancelled = false;
+  function retryUrl(value) {
+    const next = new URL(value, document.baseURI);
+    if (next.origin === location.origin) {
+      next.searchParams.set("retry", "1");
+      next.searchParams.set("_retry", String(Date.now()));
+    }
+    return next.href;
+  }
+  const sources = [url, () => retryUrl(url)];
+  if (fallbackUrl) sources.push(() => retryUrl(fallbackUrl));
+  let attempt = 0;
+  function start() {
+    notice?.remove();
+    notice = null;
+    image.style.visibility = "hidden";
+    image.src = typeof sources[attempt] === "function" ? sources[attempt]() : sources[attempt];
+  }
+  image.onload = () => {
+    if (cancelled || !image.isConnected) return;
+    image.style.visibility = "";
+    notice?.remove();
+  };
+  image.onerror = () => {
+    if (cancelled || !image.isConnected) return;
+    image.style.visibility = "hidden";
+    if (++attempt < sources.length) {
+      timer = setTimeout(start, 500 * attempt);
+      return;
+    }
+    notice = el("div", "image-unavailable");
+    const text = el("span", "", message);
+    text.setAttribute("role", "status");
+    const retry = el("button", "action image-retry", "Retry");
+    retry.type = "button";
+    retry.setAttribute("aria-label", `Retry ${image.alt || "image"}`);
+    retry.addEventListener("click", event => {
+      event.stopPropagation();
+      attempt = 1;
+      start();
+    });
+    notice.append(text, retry);
+    container.append(notice);
+  };
+  imageLoads.set(image, () => {
+    cancelled = true;
+    clearTimeout(timer);
+    notice?.remove();
+  });
+  start();
+}
 function childClass(slug) {
   return state.children.find(child => child.slug === slug)?.institution_type === "daycare" ? "daycare" : "";
 }
@@ -971,13 +1027,15 @@ function card(item, {detail = false} = {}) {
   if (item.content_type === "Album" && item.album?.thumbs) {
     const covers = el("div", "album-covers");
     for (let index = 0; index < Math.min(item.album.thumbs, 4); index++) {
+      const tile = el("div", "album-cover-tile");
       const image = el("img");
       image.alt = "";
       image.loading = "lazy";
       image.decoding = "async";
-      image.src = `api/gallery/image?album=${encodeURIComponent(item.album.id)}&cover=${index}&v=${encodeURIComponent(item.date || "")}`;
-      image.addEventListener("error", () => image.remove(), {once: true});
-      covers.append(image);
+      tile.append(image);
+      covers.append(tile);
+      loadImage(image, `api/gallery/image?album=${encodeURIComponent(item.album.id)}&cover=${index}&v=${encodeURIComponent(item.date || "")}`,
+        tile, "", "Preview unavailable");
     }
     article.append(covers);
   }
@@ -1404,9 +1462,6 @@ function openImageViewer(initial, gallery = [initial]) {
   toolbar.append(el("span"), actions, close);
   const image = el("img");
   image.referrerPolicy = "no-referrer";
-  image.addEventListener("error", () => {
-    image.replaceWith(el("p", "notice", "Image unavailable. View this post in Aula."));
-  });
   const content = el("div", "image-viewer-content");
   const status = el("p", "image-viewer-share-status");
   status.setAttribute("role", "status");
@@ -1458,8 +1513,8 @@ function openImageViewer(initial, gallery = [initial]) {
     counter.textContent = `${index + 1} / ${gallery.length}`;
     paintTags();
     image.alt = attachment.name || "Aula image";
-    image.src = attachment.url;
     content.replaceChildren(image);
+    loadImage(image, attachment.url, content, attachment.shareUrl || "", "Image unavailable here. Open in Aula.");
     content.scrollTop = 0;
     for (const offset of [1, -1]) {
       const neighbour = gallery[(index + offset + gallery.length) % gallery.length];
@@ -1674,24 +1729,19 @@ function attachmentSection(attachments, item = null, message = null) {
       image.loading = "lazy";
       image.decoding = "async";
       image.referrerPolicy = "no-referrer";
-      image.addEventListener("error", () => {
-        open.remove();
-        caption.textContent = `${attachment.name || "Image"} — Image unavailable here. Open this post in Aula to view it.`;
-        figure.append(caption);
-      }, {once: true});
+      let previewUrl = attachment.url;
       if (item) {
         const source = new URL(attachment.url);
         const previewQuery = new URLSearchParams(shareQuery);
         previewQuery.set("preview", "1");
         previewQuery.set("source", source.origin + source.pathname);
-        image.src = `api/feed/attachment?${previewQuery}`;
-      } else {
-        image.src = attachment.url;
+        previewUrl = `api/feed/attachment?${previewQuery}`;
       }
       open.append(image);
       figure.append(open);
       figure.className = "album-photo-tile";
       photoGrid.append(figure);
+      loadImage(image, previewUrl, figure, "", "Image unavailable here. Open in Aula.");
       return;
     } else if (attachment.url && item) {
       const name = attachment.name || "attachment";
@@ -2073,7 +2123,6 @@ async function albumSection(item, page) {
       image.alt = photo.name;
       image.loading = "lazy";
       image.decoding = "async";
-      image.src = albumImage(item.album.id, photo, "small");
       open.append(image);
       if (photo.type === "video") {
         open.append(el("span", "album-video-badge", "Video"));
@@ -2087,6 +2136,8 @@ async function albumSection(item, page) {
       tiles.set(photo, tile);
       paintTile(photo);
       grid.append(tile);
+      loadImage(image, albumImage(item.album.id, photo, "small"), tile,
+        albumImage(item.album.id, photo, "medium"), "Preview unavailable");
     }
     section.append(grid);
   } catch (error) {

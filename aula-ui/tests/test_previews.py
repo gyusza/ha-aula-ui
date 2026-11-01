@@ -44,6 +44,19 @@ def test_expiry_failures_and_invalid_bytes_are_not_successfully_cached(tmp_path)
     assert len(list(cache.directory.glob("*.img"))) == 1
 
 
+def test_explicit_retry_replaces_cached_bytes_and_does_not_keep_failed_entry(tmp_path):
+    cache = PreviewCache(tmp_path)
+    load = Mock(return_value=(PNG, "image/png"))
+    cache.get_or_load("image", load)
+    load.return_value = (PNG + b"new", "image/png")
+    assert cache.get_or_load("image", load, refresh=True)[0] == PNG + b"new"
+    assert load.call_count == 2
+    load.side_effect = ValueError("Unavailable")
+    with pytest.raises(ValueError, match="Unavailable"):
+        cache.get_or_load("image", load, refresh=True)
+    assert not list(cache.directory.glob("*.img"))
+
+
 def test_cache_bounds_and_parallel_requests(tmp_path, monkeypatch):
     monkeypatch.setattr(previews, "MAX_BYTES", len(PNG) * 2)
     monkeypatch.setattr(previews, "MAX_ENTRIES", 2)
@@ -105,8 +118,12 @@ def test_album_previews_reuse_cache_without_aula_metadata_requests(tmp_path, mon
         for _ in range(2):
             assert requests.get(url, params={"album": "77", "media": "1", "size": "small"}, timeout=5).content == PNG
         assert resolve.call_count == download.call_count == 1
-        assert requests.get(url, params={"album": "77", "media": "1", "size": "original"}, timeout=5).content == PNG
+        resolve.assert_called_with(controller.source_client, [], "77", "1", "small", fresh=False)
+        assert requests.get(url, params={"album": "77", "media": "1", "size": "small", "retry": "1"}, timeout=5).content == PNG
         assert resolve.call_count == download.call_count == 2
+        resolve.assert_called_with(controller.source_client, [], "77", "1", "small", fresh=True)
+        assert requests.get(url, params={"album": "77", "media": "1", "size": "original"}, timeout=5).content == PNG
+        assert resolve.call_count == download.call_count == 3
         for _ in range(2):
             assert requests.get(url, params={"album": "77", "cover": "0", "v": "first"}, timeout=5).content == PNG
         assert cover.call_count == 1

@@ -274,20 +274,21 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     size = query.get("size", ["large"])[0]
                     cover = query.get("cover", [""])[0]
                     media_id = query.get("media", [""])[0]
+                    retry = query.get("retry") == ["1"]
                     if (cover and not cover.isdigit()) or (not cover and (not media_id.isdigit() or size not in gallery.SIZES)):
                         raise ValueError("Invalid photo")
 
                     def load_image():
                         nonlocal name
                         if cover:
-                            url = gallery.cover_url(client, children, album, int(cover))
+                            url = gallery.cover_url(client, children, album, int(cover), fresh=retry)
                         else:
-                            url, name = gallery.media_url(client, children, album, media_id, size)
+                            url, name = gallery.media_url(client, children, album, media_id, size, fresh=retry)
                         return download_attachment({"url": url})
 
                     if previews and query.get("download") != ["1"] and (cover or size in {"small", "medium", "thumb"}):
                         key = f"album:{album}:{media_id}:{size}:{cover}:{query.get('v', [''])[0]}"
-                        data, content_type = previews.get_or_load(key, load_image)
+                        data, content_type = previews.get_or_load(key, load_image, refresh=retry)
                     else:
                         data, content_type = load_image()
                 except (ValueError, LookupError, AulaApiError, requests.RequestException) as error:
@@ -364,7 +365,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
 
                     if preview and previews:
                         key = f"post:{item_id}:{message_id}:{index}:{expected_source}"
-                        data, content_type = previews.get_or_load(key, load_attachment)
+                        data, content_type = previews.get_or_load(key, load_attachment, refresh=query.get("retry") == ["1"])
                     else:
                         data, content_type = load_attachment()
                 except (ValueError, AulaApiError, requests.RequestException) as error:

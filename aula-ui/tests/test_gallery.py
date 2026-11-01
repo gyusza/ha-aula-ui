@@ -82,6 +82,18 @@ def test_media_url_picks_requested_size_and_rejects_unknown_ones():
         gallery.media_url(client, [CHILD], "77", "999", "small")
 
 
+def test_retry_refreshes_expired_signed_media_and_cover_urls():
+    client = Client()
+    old, _ = gallery.media_url(client, [CHILD], "77", "1", "small")
+    client.media = [{**photo(1), "smallThumbnailUrl": "https://media-prod.aula.dk/new-small.jpg"}]
+    assert gallery.media_url(client, [CHILD], "77", "1", "small")[0] == old
+    assert gallery.media_url(client, [CHILD], "77", "1", "small", fresh=True)[0].endswith("new-small.jpg")
+    gallery.cover_url(client, [CHILD], "77", 0)
+    before = sum(query["method"] == ["gallery.getAlbums"] for query in client.queries)
+    gallery.cover_url(client, [CHILD], "77", 0, fresh=True)
+    assert sum(query["method"] == ["gallery.getAlbums"] for query in client.queries) == before + 1
+
+
 def test_media_is_paged_until_complete():
     client = Client([photo(number) for number in range(1, 151)])
     assert len(gallery.album_detail(client, [CHILD], "77")["media"]) == 150
