@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.62
+
+- Give feed item types subtle distinct card tints: peach posts, blue messages,
+  lavender albums, green calendar items, teal weekplans, gold homework and rose
+  presence updates. Tints adapt to light/dark themes and remain visible on hover;
+  detail pages retain their neutral background.
+
 ## 1.9.61
 
 - Recover intermittent image failures with bounded retries. Retried previews

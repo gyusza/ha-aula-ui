@@ -194,6 +194,11 @@ summary, displaying 10 replies initially and 10 more with each Show more action,
 retaining authors, timestamps and per-message originals. Original
 content stays readable while translation is pending or temporarily unavailable.
 
+Feed cards have subtle backgrounds and borders by item type: posts are peach,
+messages blue, albums lavender, calendar items green, weekplans teal, homework
+gold and presence updates rose. Type labels remain visible, so color is not the
+only distinction. Tints adapt to light/dark themes; detail cards stay neutral.
+
 Post details refresh attachment links from the original post when opened.
 Album covers, album thumbnails and post/message image tiles load through the
 authenticated add-on and reuse a private disk cache in `/data/image-previews`.

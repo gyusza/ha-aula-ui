@@ -947,6 +947,7 @@ function renderAgenda(items, container, {limit = state.limit, more = document.qu
 function card(item, {detail = false} = {}) {
   const article = el("article", "post");
   article.dataset.id = item.id;
+  if (!detail) article.dataset.itemType = item.content_type || "";
   const header = el("div", "post-header");
   const toggle = el("button", "collapse-toggle");
   toggle.type = "button";

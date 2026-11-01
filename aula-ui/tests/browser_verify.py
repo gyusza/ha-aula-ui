@@ -99,7 +99,7 @@ async def responsive(page):
             assert await page.evaluate("""() => {
               const luminance = color => {
                 const rgb = color.match(/[\\d.]+/g).slice(0, 3).map(Number)
-                  .map(value => value / 255).map(value => value <= .04045 ? value / 12.92
+                  .map(value => color.startsWith('color(srgb') ? value : value / 255).map(value => value <= .04045 ? value / 12.92
                     : ((value + .055) / 1.055) ** 2.4);
                 return rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722;
               };
@@ -882,6 +882,41 @@ async def album_tagging(browser, url):
         await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
         await page.get_by_role("dialog").get_by_role("button", name="Close", exact=True).wait_for()
         assert await page.locator(".image-viewer-tag").count() == 0
+    finally:
+        await page.close()
+
+
+async def feed_type_colors(browser, url):
+    page = await browser.new_page(viewport={"width": 390, "height": 844})
+    await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [], "children": []}))
+    try:
+        await page.goto(url, wait_until="networkidle")
+        await page.evaluate("""() => {
+            const types = ['Post', 'Message', 'Album', 'Calendar', 'Weekplan', 'Homework', 'Presence'];
+            document.querySelector('#feed').replaceChildren(...types.map(type => card({
+                id: 'sample:' + type, title: type, content_type: type,
+                children: [], child_slugs: [], summary: 'Sample content',
+            })));
+            const detail = card({id: 'sample:detail', title: 'Detail', content_type: 'Album',
+                children: [], child_slugs: []}, {detail: true});
+            detail.id = 'color-detail';
+            document.querySelector('#feed').append(detail);
+        }""")
+        for theme in ("light", "dark"):
+            await page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+            colors = await page.locator("#feed .post[data-item-type]").evaluate_all(
+                "cards => cards.map(card => getComputedStyle(card).backgroundColor)")
+            assert len(colors) == len(set(colors)) == 7
+            assert await page.locator("#color-detail").get_attribute("data-item-type") is None
+            assert await page.locator("#color-detail").evaluate(
+                "card => getComputedStyle(card).backgroundColor !== getComputedStyle(document.querySelector('#feed .post[data-item-type=Album]')).backgroundColor")
+            await page.locator("#feed .post[data-item-type=Post]").hover()
+            hover = await page.locator("#feed .post[data-item-type=Post]").evaluate(
+                "card => getComputedStyle(card).backgroundColor")
+            assert hover != colors[0]
+            await page.mouse.move(0, 0)
+        await page.evaluate("delete document.documentElement.dataset.theme")
+        await responsive(page)
     finally:
         await page.close()
 
@@ -1823,6 +1858,7 @@ async def verify():
                     await post_photo_grid(browser, url)
                     await album_tagging(browser, url)
                     await image_recovery(browser, url)
+                    await feed_type_colors(browser, url)
                     await mcp_settings(browser, url)
                     await sickness_reporting(browser, url)
                     await retired_siri_settings(browser, url)
