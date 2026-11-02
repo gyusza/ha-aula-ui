@@ -40,7 +40,7 @@
 
 - Added an MCP endpoint at `/mcp/<mcp_key>` for remote connectors such as claude.ai.
   Set `mcp_key` (32+ chars) to enable it; `mcp_allow_writes` adds `report_sickness`.
-  The Siri connector is kept.
+  This release retained Siri; the connector was removed in 1.9.58.
 
 ## 1.9.55
 
@@ -73,17 +73,17 @@
   instead of the obsolete `gallery.addTag` / `gallery.removeTag` RPC methods.
   Changes are still verified against the reloaded album before showing success.
 
-## 1.9.50
-
-- The feed shows 20 items before Show more (was 30); each Show more adds 20.
-  The Calendar list still shows 30 events per step.
-
 ## 1.9.51
 
 - Wide-screen calendars now appear on the left of the feed. Hide or reopen the
   sidebar with Hide calendar / Show calendar; the choice is remembered per browser.
 - Collapsing the calendar gives the feed the full width. Mobile calendar
   navigation and existing calendar filters are unchanged.
+
+## 1.9.50
+
+- The feed shows 20 items before Show more (was 30); each Show more adds 20.
+  The Calendar list still shows 30 events per step.
 
 ## 1.9.49
 
