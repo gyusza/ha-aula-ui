@@ -101,6 +101,11 @@ function authorPhoto(name, cls) {
   img.addEventListener("error", () => img.remove());
   return img;
 }
+function authorName(item, fallback = "Unknown") {
+  const name = item.sender || fallback;
+  const metadata = typeof item.sender_metadata === "string" ? item.sender_metadata.trim() : "";
+  return metadata && !name.endsWith(`(${metadata})`) ? `${name} (${metadata})` : name;
+}
 function appendInline(parent, text) {
   text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g).forEach(part => {
     if (part.startsWith("**") && part.endsWith("**")) parent.append(el("strong", "", part.slice(2, -2)));
@@ -1048,7 +1053,7 @@ function card(item, {detail = false} = {}) {
     const author = el("p", "author");
     const photo = authorPhoto(item.sender, "author-photo");
     if (photo) author.append(photo);
-    author.append(document.createTextNode(`By ${item.sender}`));
+    author.append(document.createTextNode(`By ${authorName(item)}`));
     article.append(author);
   }
   const actions = el("div", "post-actions");
@@ -1109,7 +1114,7 @@ function filteredItems(tab) {
       || (futureMode === "only" ? isFutureEvent(item) : !isFutureEvent(item))) &&
     (state.child === "all" || (item.child_slugs || []).some(slug => childIsSelected(slug))) &&
     (tab !== "saved" || saved.has(item.id)) &&
-    (!state.search || [item.title, item.translated_title, item.original_text, item.summary, item.sender,
+    (!state.search || [item.title, item.translated_title, item.original_text, item.summary, authorName(item),
       item.content_type, item.calendar_event?.title, item.calendar_event?.location,
       item.calendar_event?.source_excerpt, ...(item.children || [])]
       .join(" ").toLocaleLowerCase().includes(state.search))
@@ -2244,7 +2249,7 @@ async function route(restoreFromHistory = false) {
           }
           const bubble = el("div", "chat-bubble");
           const header = el("header", "chat-header");
-          header.append(el("h3", "", sender));
+          header.append(el("h3", "", authorName(message, "Unknown sender")));
           const time = el("time", "", timeLabel(message.date));
           if (message.date) time.dateTime = message.date;
           header.append(time);
@@ -2284,7 +2289,7 @@ async function route(restoreFromHistory = false) {
       original.append(el("h2", "", "Original source"),
         el("h3", "", `Original title: ${item.title || "Untitled"}`),
         el("div", "original", item.original_text || "No additional text provided."),
-        el("p", "detail-source", `${item.sender || "Unknown"} · ${timeLabel(item.date)}`));
+        el("p", "detail-source", `${authorName(item)} · ${timeLabel(item.date)}`));
       page.append(original);
     }
     if (item.calendar_event) {

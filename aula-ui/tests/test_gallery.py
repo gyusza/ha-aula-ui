@@ -67,6 +67,15 @@ def test_requests_carry_guardian_and_child_profiles():
     assert albums["filterInstProfileIds[]"] == ["20", "10"]
 
 
+def test_album_author_includes_aula_metadata(monkeypatch):
+    monkeypatch.setitem(ALBUM, "creator", {
+        "name": "Erik Jensen", "metadata": "Noah, Alma", "institutionCode": "A1",
+    })
+    item = gallery.feed_items(Client(), [CHILD])[0]
+    assert item["sender"] == "Erik Jensen"
+    assert item["sender_metadata"] == "Noah, Alma"
+
+
 def test_album_detail_skips_deleted_media_and_keeps_videos():
     detail = gallery.album_detail(Client(), [CHILD], "77")
     assert [(row["id"], row["type"]) for row in detail["media"]] == [("1", "image"), ("2", "video")]

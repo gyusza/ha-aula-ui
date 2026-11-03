@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.63
+
+- Show Aula's author context beside names in posts, conversation replies, albums
+  and calendar items, including parents' child names in parentheses. Keep
+  author identity, avatars, message grouping and saved AI content unchanged.
+- Refresh older conversations gradually to collect author context, within the
+  existing request limits.
+
 ## 1.9.62
 
 - Give feed item types subtle distinct card tints: peach posts, blue messages,

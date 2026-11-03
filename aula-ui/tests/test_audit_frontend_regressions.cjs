@@ -201,6 +201,7 @@ function cardContext() {
     saveAction: () => el("button", "action", "Save"), shareUrl: () => "", navigate() {}, setNotice() {},
     setPostCollapsed() {}, collapsedPosts: new Set(["post:1"]),
   });
+  vm.runInContext(slice("function authorName(", "function appendInline("), context);
   vm.runInContext(slice("function card(", "function attentionEvents("), context);
   return context;
 }
@@ -286,6 +287,7 @@ test("Aula and AI strings with literal markup render as inert text", () => {
   vm.runInContext(slice("const paths =", "function el("), context);
   vm.runInContext(slice("function summaryMarkup(", "function chatParagraphs("), context);
   vm.runInContext(slice("function plainText(", "const state ="), context);
+  vm.runInContext(slice("function authorName(", "function appendInline("), context);
   vm.runInContext(slice("function calendarEvidence(", "function agendaEvent("), context);
   vm.runInContext(slice("function card(", "function attentionEvents("), context);
   const item = {

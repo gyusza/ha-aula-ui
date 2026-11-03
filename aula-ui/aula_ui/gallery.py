@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from .aula_api import AulaApiError, _call
+from .messages import sender_details
 
 
 def profile_context(client: Any, children: Any) -> tuple[list[str], dict[str, set[str]]]:
@@ -109,7 +110,7 @@ def feed_items(client: Any, children: Any) -> list[dict[str, Any]]:
         items.append({
             "id": f"album:{row['id']}", "title": str(row.get("title") or "").strip() or "Photo album",
             "original_text": str(row.get("description") or "").strip(),
-            "sender": str(creator.get("name") or "Aula"), "date": str(row.get("creationDate") or ""),
+            **sender_details(creator, fallback="Aula"), "date": str(row.get("creationDate") or ""),
             "content_type": "Album", "children": [child.name for child in children if child.slug in slugs],
             "child_slugs": slugs,
             "album": {"id": str(row["id"]), "thumbs": len(row.get("thumbnailsUrls") or []),

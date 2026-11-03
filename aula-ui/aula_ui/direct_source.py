@@ -14,7 +14,7 @@ import requests
 
 from aula_ui.aula_api import AulaApiError, AulaBudgetExceeded, AulaRateLimited
 from aula_ui.events import classify_event_type
-from aula_ui.messages import strip_html
+from aula_ui.messages import sender_details, strip_html
 from vendor.easyiq.calendar_shapes import (
     _event_end_datetime,
     _event_item_type,
@@ -416,7 +416,6 @@ class DirectAulaClient:
                 last_date += timedelta(days=1)
             end = last_date.isoformat()
         owner = raw.get("creator") or raw.get("ownerProfile") or raw.get("organizer") or {}
-        author = owner.get("fullName") or owner.get("name") or "" if isinstance(owner, dict) else str(owner)
         resource = raw.get("primaryResource") or {}
         location = raw.get("location") or (resource.get("name") if isinstance(resource, dict) else resource) or ""
         if isinstance(location, dict):
@@ -435,7 +434,7 @@ class DirectAulaClient:
             "type": classify_event_type(title, description), "origin": "Calendar",
             "calendar_kind": "lesson" if isinstance(raw.get("lesson"), dict) and raw["lesson"].get("lessonId")
             else str(raw.get("type") or ""),
-            "calendar_source": "aula", "sender": author or "Aula calendar",
+            "calendar_source": "aula", **sender_details(owner, fallback="Aula calendar"),
         }
 
     @observed("easyiq.calendar")

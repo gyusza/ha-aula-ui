@@ -161,8 +161,7 @@ def message_from_thread_summary(thread: dict[str, Any]) -> dict[str, Any] | None
             "id": latest.get("id"),
             "subject": thread.get("subject"),
             "text": _thread_preview(thread),
-            "sender": (sender.get("fullName") or sender.get("displayName"))
-            if isinstance(sender, dict) else str(sender),
+            "sender": sender,
             "date": _thread_date(thread),
             "attachments": latest.get("attachments"),
             "hasAttachments": latest.get("hasAttachments"),
@@ -224,8 +223,7 @@ def fetch_thread_messages(
                 note_author(sender.get("fullName") or sender.get("displayName"), sender)
             normalised = normalise_message({
                 "id": raw.get("id"), "subject": subject, "text": body or "",
-                "sender": (sender.get("fullName") or sender.get("displayName") or "")
-                if isinstance(sender, dict) else str(sender),
+                "sender": sender,
                 "date": raw.get("sendDateTime"),
                 "attachments": raw.get("attachments"),
                 "hasAttachments": raw.get("hasAttachments"),

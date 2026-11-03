@@ -87,13 +87,31 @@ def looks_non_english(text: str) -> bool:
     return hits >= 2 or (hits >= 1 and len(words) <= 6)
 
 
+def sender_details(profile: Any, fallback: str = "Unknown") -> dict[str, str]:
+    """Keep Aula's author metadata separate from the author's identity."""
+    metadata = ""
+    if isinstance(profile, dict):
+        metadata = profile.get("metadata")
+        name = profile.get("fullName") or profile.get("displayName") or profile.get("name")
+    else:
+        name = profile
+    result = {"sender": str(name or "").strip() or fallback}
+    if isinstance(metadata, str) and metadata.strip():
+        result["sender_metadata"] = metadata.strip()
+    return result
+
+
 def normalise_message(raw: dict[str, Any], fallback_date: str | None = None) -> dict[str, Any] | None:
     """Convert one raw message dict into the add-on's canonical shape."""
     if not isinstance(raw, dict):
         return None
 
     subject = str(raw.get("subject") or raw.get("title") or "").strip()
-    sender = str(raw.get("sender") or raw.get("from") or "").strip()
+    author = sender_details(raw.get("sender") or raw.get("from"), fallback="")
+    sender = author["sender"]
+    metadata = raw.get("sender_metadata")
+    if "sender_metadata" not in author and isinstance(metadata, str) and metadata.strip():
+        author["sender_metadata"] = metadata.strip()
     body_raw = raw.get("text") if raw.get("text") is not None else raw.get("original_text")
     if body_raw is None:
         body_raw = raw.get("body") or raw.get("message") or ""
@@ -110,7 +128,7 @@ def normalise_message(raw: dict[str, Any], fallback_date: str | None = None) -> 
         "id": message_id(subject, sender, text, raw.get("id")),
         "title": subject,
         "original_text": text,
-        "sender": sender or "Unknown",
+        **author, "sender": sender or "Unknown",
         "date": date,
         **({"attachments": media} if media else {}),
     }

@@ -390,6 +390,14 @@ by the author's display name; at most 25 new pictures are downloaded per sync
 and 1000 authors are remembered. Authors without an Aula picture keep their
 initials.
 
+Author names include Aula's own profile context in parentheses, such as
+`Erik Jensen (Noah, Alma)` for a parent. This appears on feed cards, conversation
+replies and original-source details, including albums and official calendar
+items when supplied by Aula. Names are not inferred from a post's audience or
+the currently selected child. Missing context leaves the name unchanged.
+Existing conversations collect this context gradually during normal syncs;
+saved summaries and translations are reused.
+
 ## Notifications
 
 Notification previews prioritize passages that explicitly name your children,

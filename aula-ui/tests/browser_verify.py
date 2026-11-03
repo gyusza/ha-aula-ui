@@ -453,9 +453,9 @@ async def presentation(page, url):
          "original_text": "The office closes at four.", "is_translated": None, "translation_status": "original"},
         {"id": "translated", "sender": "Teacher", "date": "2026-10-25T10:10:00Z",
          "original_text": "Tak for svaret.", "translated_text": "Thank you for replying.", "is_translated": True},
-        {"id": "english-reply", "sender": "Parent", "date": "2026-10-25T10:05:00Z",
+        {"id": "english-reply", "sender": "Parent", "sender_metadata": "Noah, Alma", "date": "2026-10-25T10:05:00Z",
          "original_text": "We will bring lunch.", "is_translated": False},
-        {"id": "english", "sender": "Parent", "date": "2026-10-25T10:00:00Z",
+        {"id": "english", "sender": "Parent", "sender_metadata": "Noah, Alma", "date": "2026-10-25T10:00:00Z",
          "original_text": "We can attend.", "translated_text": "We can attend.", "is_translated": False},
     ]
     item = {
@@ -494,6 +494,7 @@ async def presentation(page, url):
         "nodes => nodes.map(node => node.dataset.messageId)"
     ) == ["failed", "pending", "no-provider", "translated", "english-reply", "english"]
     assert await page.locator(".thread-message.consecutive").count() == 2
+    assert await page.locator('[data-message-id="english-reply"] .chat-header h3').inner_text() == "Parent (Noah, Alma)"
     assert await page.locator(".chat-avatar").count() == len(messages)
     assert await page.locator(".chat-language").all_text_contents() == [
         "Original message", "English translation", "English original", "English original",
@@ -586,6 +587,7 @@ async def installed_ios_download(browser, url):
         "id": "post:42", "title": "Bike ride", "content_type": "Post",
         "date": "2026-10-23T13:25:00Z", "summary": "Text-only summary.",
         "original_text": "Bakkeskoven bicycle trip", "children": [], "child_slugs": [],
+        "sender": "Erik Jensen", "sender_metadata": "Noah, Alma",
         "attachments": [{"name": "Guide.pdf", "kind": "file", "url": "https://media-prod.aula.dk/guide"}],
     }
     await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [item], "children": []}))
@@ -1112,6 +1114,7 @@ async def media_details(page, url, controller):
         "id": "post:42", "title": "Bike ride", "content_type": "Post",
         "date": "2026-10-23T13:25:00Z", "summary": "Text-only summary.",
         "original_text": "Bakkeskoven bicycle trip", "children": [], "child_slugs": [],
+        "sender": "Erik Jensen", "sender_metadata": "Noah, Alma",
         "attachments": [
             {"name": "Invitation", "kind": "image", "url": "https://media.example.test/photo.png"},
             {"name": "Guide.pdf", "kind": "file", "url": "https://media-prod.aula.dk/guide"},
@@ -1168,11 +1171,14 @@ async def media_details(page, url, controller):
             await route.fulfill(body=b"Office fixture", content_type="application/octet-stream")
     await page.route("**/api/feed/attachment?*", file)
     await page.goto(url, wait_until="networkidle")
+    assert await page.locator("#feed .author").inner_text() == "By Erik Jensen (Noah, Alma)"
     assert await page.locator("#feed .content-indicators").get_by_text("1 image", exact=True).count() == 1
     assert await page.locator("#feed .content-indicators").get_by_text("1 attachment", exact=True).count() == 1
     assert await page.locator("#feed .content-indicators").get_by_text("1 pending event", exact=True).count() == 1
     await page.goto(url + "#post/post%3A42", wait_until="networkidle")
     await page.get_by_role("heading", name="Related calendar events", exact=True).wait_for()
+    assert await page.locator(".detail-source").get_by_text(
+        "Erik Jensen (Noah, Alma)", exact=False).count() == 1
     assert await page.locator(".related-calendar").get_by_role("button", name="Accept", exact=True).count() == 1
     assert await page.locator(".related-calendar .notice").count() == 0
     await page.locator(".related-calendar").get_by_text("Review details", exact=True).click()

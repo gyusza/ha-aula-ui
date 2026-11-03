@@ -195,7 +195,7 @@ def fetch_posts(client: Any, children: Any, pages: int) -> list[dict[str, Any]]:
                     message = normalise_message({
                         "id": raw.get("id"), "title": raw.get("title"),
                         "text": content.get("html") if isinstance(content, dict) else content,
-                        "sender": owner.get("fullName") or owner.get("displayName"),
+                        "sender": owner,
                         "date": raw.get("publishAt") or raw.get("timestamp"),
                         "attachments": raw.get("attachments"),
                         "hasAttachments": raw.get("hasAttachments"),
@@ -346,6 +346,8 @@ class Feed:
         current = bool(cached) and (saved.get("revision") == revision
                                     or str(preview["id"]) in {str(m.get("id")) for m in cached})
         age = time.time() - saved.get("fetched_at", 0)
+        if not saved.get("sender_metadata_loaded"):
+            age = max(age, THREAD_REFRESH_SECONDS)
         client = self.controller.source_client
         limited = self._thread_pause is not None or _source_paused(client, THREAD_METHOD)
         if current and (age < THREAD_REFRESH_SECONDS or limited
@@ -360,7 +362,8 @@ class Feed:
             messages = fetch_thread_messages(self.controller.source_client, thread["id"])
             if not messages and preview.get("original_text"):
                 raise AulaApiError("Thread returned no messages despite a non-empty latest message")
-            cache[key] = {"revision": revision, "messages": messages, "fetched_at": time.time()}
+            cache[key] = {"revision": revision, "messages": messages, "fetched_at": time.time(),
+                          "sender_metadata_loaded": True}
             store.set("feed_thread_content", cache)
             return {"thread_messages": messages, "thread_complete": True, "thread_fetch_error": ""}
         except AulaApiError as err:
@@ -461,6 +464,7 @@ class Feed:
                     "event_type": event["type"], "children": [child.name],
                     "end": event.get("end", ""), "location": event.get("location", ""),
                     "child_slugs": [child.slug], "sender": event.get("sender") or "EasyIQ",
+                    **({"sender_metadata": event["sender_metadata"]} if event.get("sender_metadata") else {}),
                     "calendar_source": event.get("calendar_source", "easyiq"),
                     "calendar_kind": event.get("calendar_kind", ""),
                 })
@@ -521,7 +525,15 @@ class Feed:
                 "translation_status": "pending" if controller.provider is not None else "original",
             } for message in item.get("thread_messages", [])]
             if saved.get("fingerprint") == fingerprint:
+                authors = {message["id"]: message.get("sender_metadata", "")
+                           for message in item["thread_messages"]}
                 item.update({k: saved[k] for k in _ENRICHMENT_FIELDS if k in saved})
+                item["thread_messages"] = [dict(message) for message in item["thread_messages"]]
+                for message in item["thread_messages"]:
+                    metadata = authors.get(message["id"], "")
+                    message.pop("sender_metadata", None)
+                    if metadata:
+                        message["sender_metadata"] = metadata
                 item["analysis_pending"] = bool(saved.get("translation_pending"))
             else:
                 # Old 3-sentence caches are deliberately regenerated, but remain
