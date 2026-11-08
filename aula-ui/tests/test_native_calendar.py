@@ -1,6 +1,8 @@
 """Official Aula dates coexist with planning data and reviewed AI guesses."""
 
 import json
+import copy
+from datetime import datetime, timezone
 
 import pytest
 import requests
@@ -19,6 +21,112 @@ NATIVE = {
     "description": {"html": "<p>Please bring your questions.</p>"},
     "creator": {"fullName": "Class teacher"},
 }
+
+BOOKING = {
+    **NATIVE, "type": "school_home_meeting", "belongsToProfiles": [1001, 1002],
+    "timeSlot": {"timeSlots": [{
+        "id": 1,
+        "timeSlotIndexes": [
+            {"startTime": "2026-11-09T18:00:00+01:00", "endTime": "2026-11-09T18:15:00+01:00"},
+            {"startTime": "2026-11-09T18:30:00+01:00", "endTime": "2026-11-09T18:45:00+01:00"},
+        ],
+        "answers": [
+            {"concerningProfileId": 1001, "selectedTimeSlotIndex": 1},
+            {"concerningProfileId": 1001, "selectedTimeSlotIndex": 1},
+            {"concerningProfileId": 1002, "selectedTimeSlotIndex": 0},
+        ],
+    }]},
+}
+
+
+def test_booked_meeting_uses_exact_child_slot_not_full_window(controller):
+    install(controller)
+    source = DirectAulaClient(controller.account.connection, CalendarSession(
+        payload([BOOKING]), payload([BOOKING])))
+    source.context = {"institutionProfile": {"id": 2001}}
+    events = source.native_events(CHILDREN[0], lookahead_days=14)
+    assert len(events) == 1
+    assert events[0]["timestamp"] == "2026-11-09T18:30:00+01:00"
+    assert events[0]["end"] == "2026-11-09T18:45:00+01:00"
+    assert events[0]["calendar_kind"] == "school_home_meeting"
+    assert events[0]["location"] == "Main hall"
+    other = source._native_events_for_child(BOOKING, [1002])
+    assert other[0]["timestamp"] == "2026-11-09T18:00:00+01:00"
+
+
+def test_booked_slot_respects_lookahead_even_when_overall_window_overlaps(controller, monkeypatch):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 8, tzinfo=timezone.utc)
+
+    monkeypatch.setattr("aula_ui.direct_source.datetime", Clock)
+    install(controller)
+    raw = copy.deepcopy(BOOKING)
+    raw["timeSlot"]["timeSlots"][0]["timeSlotIndexes"][1] = {
+        "startTime": "2026-12-01T18:30:00+01:00", "endTime": "2026-12-01T18:45:00+01:00",
+    }
+    source = DirectAulaClient(controller.account.connection, CalendarSession(payload([raw])))
+    source.context = {"institutionProfile": {"id": 2001}}
+    assert source.native_events(CHILDREN[0], lookahead_days=7) == []
+
+
+def test_meetings_without_child_booking_are_not_calendar_entries():
+    assert DirectAulaClient._native_events_for_child(BOOKING, [9999]) == []
+    fixed = {**NATIVE, "type": "parental_meeting", "belongsToProfiles": [1001]}
+    assert DirectAulaClient._native_events_for_child(fixed, [1001])[0]["timestamp"] == NATIVE["startDateTime"]
+    assert DirectAulaClient._native_events_for_child(fixed, [1002]) == []
+
+
+@pytest.mark.parametrize("index", [-1, 2, True, "1"])
+def test_invalid_booked_slot_is_explicit_instead_of_using_overall_dates(index):
+    raw = copy.deepcopy(BOOKING)
+    raw["timeSlot"]["timeSlots"][0]["answers"][0]["selectedTimeSlotIndex"] = index
+    with pytest.raises(AulaApiError, match="unknown booked slot"):
+        DirectAulaClient._native_events_for_child(raw, [1001])
+
+
+def test_unselected_and_other_children_answers_do_not_produce_bookings():
+    raw = copy.deepcopy(BOOKING)
+    raw["timeSlot"]["timeSlots"][0]["answers"] = [
+        {"concerningProfileId": 1001, "selectedTimeSlotIndex": None},
+        {"concerningProfileId": 1002, "selectedTimeSlotIndex": -1},
+    ]
+    assert DirectAulaClient._native_events_for_child(raw, [1001]) == []
+
+
+@pytest.mark.parametrize("interval", [
+    {"startTime": "invalid", "endTime": "invalid"},
+    {"startTime": "2026-11-09T18:30:00+01:00", "endTime": "2026-11-09T18:15:00+01:00"},
+    {"startTime": "2026-11-09T18:30:00", "endTime": "2026-11-09T18:45:00"},
+])
+def test_invalid_booked_times_do_not_fall_back_to_window(interval):
+    raw = copy.deepcopy(BOOKING)
+    raw["timeSlot"]["timeSlots"][0]["timeSlotIndexes"][1] = interval
+    with pytest.raises(AulaApiError, match="invalid booked times"):
+        DirectAulaClient._native_events_for_child(raw, [1001])
+
+
+def test_meeting_refresh_replaces_window_and_retains_cache_on_invalid_booking(controller, monkeypatch):
+    install(controller)
+    source_handlers(controller, monkeypatch)
+    source = controller.account.source
+    result = [source._native_event(BOOKING)]
+    monkeypatch.setattr(source, "native_events", lambda *args: list(result))
+    controller.poll_cycle()
+    previous = next(event for event in controller.calendar.snapshot_events()
+                    if event["calendar_kind"] == "school_home_meeting")
+    result[:] = source._native_events_for_child(BOOKING, [1001])
+    controller.poll_cycle()
+    assert previous["uid"] not in {event["uid"] for event in controller.calendar.snapshot_events()}
+    booked = controller.store.get("native_calendar:child_101")
+    assert booked[0]["timestamp"] == "2026-11-09T18:30:00+01:00"
+    raw = copy.deepcopy(BOOKING)
+    raw["timeSlot"]["timeSlots"][0]["answers"][0]["selectedTimeSlotIndex"] = 99
+    monkeypatch.setattr(source, "native_events", lambda *args: source._native_events_for_child(raw, [1001]))
+    controller.poll_cycle()
+    assert controller.store.get("native_calendar:child_101") == booked
+    assert any("unknown booked slot" in error for error in json.loads(controller.feed_json)["errors"])
 
 
 class CalendarSession(Session):

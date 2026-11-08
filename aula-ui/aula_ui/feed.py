@@ -15,7 +15,8 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from .aula_api import (
-    AulaApiError, AulaRateLimited, _call, fetch_thread_messages, message_from_thread_summary, thread_matches_child,
+    AulaApiError, AulaRateLimited, _call, fetch_guardian_profiles, fetch_thread_messages,
+    message_from_thread_summary, thread_matches_child,
 )
 from .llm import (
     LLMError, enrich_content, summarise,
@@ -153,10 +154,7 @@ def fetch_posts(client: Any, children: Any, pages: int) -> list[dict[str, Any]]:
     Aula silently returns an empty list when either profile is omitted.
     Attribution comes from the filtered request, not the author's institution.
     """
-    payload = _call(client, "?method=profiles.getProfilesByLogin")
-    profiles = (payload.get("data") or {}).get("profiles")
-    if not isinstance(profiles, list):
-        raise AulaApiError("Aula profiles response has no profiles list")
+    profiles = fetch_guardian_profiles(client)
     posts: dict[str, dict[str, Any]] = {}
     for child in children:
         pairs: list[tuple[str, str]] = []

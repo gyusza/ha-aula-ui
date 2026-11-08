@@ -31,8 +31,8 @@ def test_working_api_version_is_learned_and_reused_after_restart(controller, cap
     source.session = session
     with caplog.at_level(logging.DEBUG, logger="aula_ui.direct_source"):
         source.get("?method=messaging.getThreads")
-    assert [call[0][-3:] for call in session.calls] == ["v22", "v23", "v24"]
-    assert controller.store.get("aula_api_version") == 24
+    assert [call[0][-3:] for call in session.calls] == ["v25", "v26", "v27"]
+    assert controller.store.get("aula_api_version") == 27
     # Probing a retired version is expected and must not be logged as a warning.
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING and "status=410" in r.getMessage()]
     controller.close()
@@ -41,21 +41,21 @@ def test_working_api_version_is_learned_and_reused_after_restart(controller, cap
         session = Session(payload({"threads": []}))
         restarted.account.source.session = session
         restarted.account.source.get("?method=messaging.getThreads")
-        assert len(session.calls) == 1 and session.calls[0][0].endswith("/v24")
+        assert len(session.calls) == 1 and session.calls[0][0].endswith("/v27")
     finally:
         restarted.close()
 
 
 def test_invalid_remembered_api_version_is_ignored(controller):
     source = DirectAulaClient(controller.account.connection, Session())
-    for value in ("24", True, 3, 999, None):
+    for value in ("25", True, 3, 22, 24, 999, None):
         source.restore_version(value)
-        assert source.version == 22
+        assert source.version == 25
 
 
 def test_login_discovery_starts_at_learned_version_and_survives_auth_retry(controller, monkeypatch):
     import aula_ui.account as account_module
-    controller.account.source.version = 24
+    controller.account.source.version = 26
     sessions = []
 
     class Recorder(Session):
@@ -69,7 +69,7 @@ def test_login_discovery_starts_at_learned_version_and_survives_auth_retry(contr
     tokens = {"access_token": "fresh-access", "refresh_token": "fresh-refresh", "expires_in": 3600}
     controller.account.connect("example-guardian", tokens)
     calls = sessions[0].calls
-    assert all(url.endswith("/v24") for url, _ in calls)
+    assert all(url.endswith("/v26") for url, _ in calls)
     assert len(calls) == 3  # the 401 retry no longer crashes with a TypeError
     assert controller.account.connection.value["username"] == "example-guardian"
 

@@ -136,7 +136,7 @@ class AulaLoginClient:
         self.auth_base_url = "https://login.aula.dk"
         self.broker_url = "https://broker.unilogin.dk"
         self.app_redirect_uri = "https://app-private.aula.dk"
-        self.app_api_base = "https://app-private.aula.dk/api/v22"
+        self.app_api_base = "https://app-private.aula.dk/api/v25"
 
         # OAuth configuration from source code
         self.client_id_level_3 = "_99949a54b8b65423862aac1bf629599ed64231607a"
@@ -1078,8 +1078,7 @@ class AulaLoginClient:
             raise APIError("No access token available")
 
         try:
-            # Based on HAR file analysis - actual v22 API endpoints with correct parameters
-            v22_api_base = "https://www.aula.dk/api/v22/"
+            api_base = "https://www.aula.dk/api/v25/"
 
             # Generate a device ID similar to what the app uses
             device_id = f"Droid-private-{str(uuid.uuid4())}"
@@ -1121,10 +1120,10 @@ class AulaLoginClient:
 
                 # Convert params to query string
                 param_string = "&".join([f"{k}={v}" for k, v in url_params.items()])
-                url = f"{v22_api_base}?{param_string}"
+                url = f"{api_base}?{param_string}"
 
                 try:
-                    self.log(f"Testing v22 API method: {method_name}")
+                    self.log(f"Testing API method: {method_name}")
 
                     if http_method == "GET":
                         response = self.session.get(
@@ -1289,7 +1288,7 @@ class AulaLoginClient:
         """Test if the current token is valid by making a simple API call"""
         try:
             # Test with a simple API call
-            test_url = f"https://www.aula.dk/api/v22/?method=profiles.getProfileContext&portalrole=guardian"
+            test_url = "https://www.aula.dk/api/v25/?method=profiles.getProfileContext&portalrole=guardian"
 
             headers = {
                 "Accept": "application/json",

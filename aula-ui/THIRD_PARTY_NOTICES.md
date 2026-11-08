@@ -16,6 +16,7 @@ Local changes:
 
 - Removed the unused ASCII QR display thread, which could survive cancellation.
 - Use cryptographically secure randomness for the SRP ephemeral private value.
+- Update Aula login API probes from retired v22 to v25.
 
 The wrapper in `aula_ui/account_auth.py` supplies bounded, cancellable HTTP requests,
 strict callback origin/state validation, browser identity selection, encrypted

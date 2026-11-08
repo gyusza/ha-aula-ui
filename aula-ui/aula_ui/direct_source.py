@@ -29,7 +29,7 @@ from .diagnostics import TRACE, observed
 _LOGGER = logging.getLogger(__name__)
 
 AULA_API = "https://www.aula.dk/api/v"
-FIRST_API_VERSION = 22
+FIRST_API_VERSION = 25
 MAX_API_VERSION = 30
 EASYIQ_CALENDAR = "https://skoleportal.easyiqcloud.dk/Calendar/CalendarGetWeekplanEvents"
 
@@ -294,14 +294,64 @@ class DirectAulaClient:
         except AuthenticationError as err:
             raise AulaApiError(str(err)) from None
 
-    @observed("aula.discover")
-    def discover(self):
+    def guardian_profiles(self):
+        """Merge context-only access without confusing child and guardian profile IDs."""
         profiles = self.get("?method=profiles.getProfilesByLogin")["data"].get("profiles")
         if not isinstance(profiles, list):
             raise AulaApiError("Aula did not return guardian profiles.")
         context = self.get("?method=profiles.getProfileContext&portalrole=guardian")["data"]
         if not isinstance(context, dict):
             raise AulaApiError("Aula did not return a guardian context.")
+        merged = copy.deepcopy(profiles)
+        known = {}
+        for profile in merged:
+            if not isinstance(profile, dict):
+                raise AulaApiError("Invalid Aula guardian profile.")
+            for child in profile.get("children") or []:
+                if not isinstance(child, dict):
+                    raise AulaApiError("Invalid Aula child relationship.")
+                known[str(child.get("id"))] = child
+        institutions = context.get("institutions") or []
+        if not isinstance(institutions, list):
+            raise AulaApiError("Aula guardian context has invalid institutions.")
+        for institution in institutions:
+            if not isinstance(institution, dict):
+                raise AulaApiError("Invalid Aula context institution.")
+            relations = institution.get("children") or []
+            if not isinstance(relations, list):
+                raise AulaApiError("Aula context has invalid child relationships.")
+            extra = []
+            for child in relations:
+                if not isinstance(child, dict):
+                    raise AulaApiError("Invalid Aula context child.")
+                if str(child.get("id")) in known:
+                    continue
+                relation = dict(child)
+                relation["institutionCode"] = child.get("institutionCode") or institution.get("institutionCode")
+                if not all(str(relation.get(key) or "").isdigit() for key in ("profileId", "id", "userId")) \
+                        or not relation.get("name") or not relation.get("institutionCode"):
+                    raise AulaApiError(
+                        "An extended-access child has incomplete Aula identifiers; cached family data was retained.")
+                extra.append(relation)
+                known[str(relation["id"])] = relation
+            if extra:
+                code = institution.get("institutionCode")
+                guardian_id = institution.get("institutionProfileId")
+                guardians = [{"id": guardian_id, "institutionCode": code}] \
+                    if str(guardian_id or "").isdigit() and code else []
+                if not guardians:
+                    guardians = [dict(guardian) for profile in profiles
+                                 for guardian in profile.get("institutionProfiles") or []
+                                 if guardian.get("institutionCode") in {
+                                     child["institutionCode"] for child in extra}]
+                merged.append({"children": extra, "institutionProfiles": guardians})
+        self.profiles = merged
+        self.context = context
+        return merged
+
+    @observed("aula.discover")
+    def discover(self):
+        profiles = self.guardian_profiles()
         children = {}
         for profile in profiles:
             if not isinstance(profile, dict):
@@ -317,8 +367,6 @@ class DirectAulaClient:
                     entry["relations"].append(dict(child))
         if not children:
             raise AulaApiError("No children found. Choose a guardian identity with access to children.")
-        self.profiles = profiles
-        self.context = context
         return list(children.values())
 
     def presence(self, child):
@@ -374,6 +422,7 @@ class DirectAulaClient:
         """Fetch Aula's own calendar independently of optional EasyIQ widgets."""
         identifiers = sorted({int(relation["id"]) for relation in child["relations"]})
         start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        window_end = start + timedelta(days=lookahead_days)
         events = {}
         # Aula bounds calendar requests; fetch small overlapping-safe windows.
         for offset in range(0, max(1, lookahead_days), 7):
@@ -389,9 +438,63 @@ class DirectAulaClient:
             for raw in payload:
                 if not isinstance(raw, dict):
                     raise AulaApiError("Aula returned an invalid native calendar event.")
-                event = self._native_event(raw)
-                events[event["id"]] = event
+                for event in self._native_events_for_child(raw, identifiers):
+                    if raw.get("type") in {"school_home_meeting", "parental_meeting"} and raw.get("timeSlot"):
+                        appointment_start = datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00"))
+                        appointment_end = datetime.fromisoformat(event["end"].replace("Z", "+00:00"))
+                        if appointment_start >= window_end or appointment_end <= start:
+                            continue
+                    events[event["id"]] = event
         return sorted(events.values(), key=lambda event: event["timestamp"])
+
+    @classmethod
+    def _native_events_for_child(cls, raw, identifiers):
+        if raw.get("type") not in {"school_home_meeting", "parental_meeting"}:
+            return [cls._native_event(raw)]
+        wanted = {str(identifier) for identifier in identifiers}
+        booking = raw.get("timeSlot")
+        if not booking:
+            belongs = raw.get("belongsToProfiles") or []
+            if not isinstance(belongs, list):
+                raise AulaApiError("Aula meeting has invalid child attribution; cached dates were retained.")
+            return [cls._native_event(raw)] if wanted.intersection(map(str, belongs)) else []
+        if not isinstance(booking, dict) or not isinstance(booking.get("timeSlots"), list):
+            raise AulaApiError("Aula meeting has invalid booking slots; cached dates were retained.")
+        events = {}
+        for slot in booking["timeSlots"]:
+            if not isinstance(slot, dict):
+                raise AulaApiError("Aula meeting has an invalid booking slot; cached dates were retained.")
+            answers = slot.get("answers") or []
+            indexes = slot.get("timeSlotIndexes") or []
+            if not isinstance(answers, list) or not isinstance(indexes, list):
+                raise AulaApiError("Aula meeting has invalid booking answers; cached dates were retained.")
+            for answer in answers:
+                if not isinstance(answer, dict):
+                    raise AulaApiError("Aula meeting has an invalid booking answer; cached dates were retained.")
+                if str(answer.get("concerningProfileId")) not in wanted:
+                    continue
+                selected = answer.get("selectedTimeSlotIndex")
+                if selected is None:
+                    continue
+                if type(selected) is not int or not 0 <= selected < len(indexes):
+                    raise AulaApiError("Aula meeting refers to an unknown booked slot; cached dates were retained.")
+                interval = indexes[selected]
+                if not isinstance(interval, dict):
+                    raise AulaApiError("Aula meeting has an invalid booked interval; cached dates were retained.")
+                first, last = interval.get("startTime"), interval.get("endTime")
+                try:
+                    start, end = (datetime.fromisoformat(value.replace("Z", "+00:00"))
+                                  for value in (first, last))
+                    valid = start < end and start.tzinfo is not None and end.tzinfo is not None
+                except (AttributeError, TypeError, ValueError):
+                    valid = False
+                if not valid:
+                    raise AulaApiError("Aula meeting has invalid booked times; cached dates were retained.")
+                event = cls._native_event({
+                    **raw, "startDateTime": first, "endDateTime": last, "allDay": False, "isAllDay": False,
+                })
+                events[event["id"]] = event
+        return list(events.values())
 
     @staticmethod
     def _native_event(raw):

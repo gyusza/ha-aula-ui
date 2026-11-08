@@ -101,6 +101,7 @@ def source_handlers(controller, monkeypatch):
                 }} for identifier in (1001, 1002)
             ],
             "profiles.getProfilesByLogin": {"profiles": PROFILES},
+            "profiles.getProfileContext": WIDGETS,
             "messaging.getThreads": {"threads": [{
                 "id": 81, "subject": "Maja message", "regardingChildren": [{"profileId": 101}],
                 "latestMessage": {"id": 55, "text": {"html": "Bring lunch"}, "sendDateTime": "2026-10-03T08:00:00Z"},
@@ -461,14 +462,26 @@ def test_direct_discovery_upgrades_aula_api_and_keeps_child_identifiers(controll
     }))
     source = DirectAulaClient(controller.account.connection, session)
     assert source.discover() == CHILDREN
-    assert source.version == 23
+    assert source.version == 26
     assert source.context["userId"] == 5001
-    assert session.calls[0][0].endswith("/v22")
-    assert session.calls[1][0].endswith("/v23")
+    assert session.calls[0][0].endswith("/v25")
+    assert session.calls[1][0].endswith("/v26")
     assert ("access_token", TOKENS["access_token"]) in session.calls[1][1]["params"]
     source.session = Session(Response({"invalid": True}))
     with pytest.raises(AulaApiError, match="invalid response"):
         source.get("?method=anything")
+
+
+def test_login_probes_use_current_api_without_retired_version_requests():
+    client = InteractiveLoginClient.__new__(InteractiveLoginClient)
+    client.tokens = {"access_token": "fixture-access"}
+    client.timeout = 10
+    client.session = Session(payload({}), payload({}), payload({}), payload({}))
+    client.session.headers = {"User-Agent": "fixture-client"}
+    assert client.step9_test_api_access()["success"]
+    assert client.test_token_validity()
+    assert len(client.session.calls) == 4
+    assert all(url.startswith("https://www.aula.dk/api/v25/") for url, _ in client.session.calls)
 
 
 def test_direct_gallery_tag_uses_aula_web_update_attachments(controller):
@@ -479,7 +492,7 @@ def test_direct_gallery_tag_uses_aula_web_update_attachments(controller):
 
     assert source.update_media_tags(211983628, [900, 1001], "Bike trip", None)["status"]["code"] == 0
     url, kwargs = session.calls[0]
-    assert url.endswith("/api/v22")
+    assert url.endswith("/api/v25")
     assert ("method", "files.updateAttachments") in kwargs["params"]
     assert ("access_token", TOKENS["access_token"]) in kwargs["params"]
     assert kwargs["json"] == {"media": [{

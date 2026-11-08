@@ -260,7 +260,8 @@ the account as follows, and always keeps showing cached content:
   After the first 429 on full conversations, the rest of that sync shows cached
   messages instead of trying each remaining thread.
 - **API version:** the working Aula API version is remembered across restarts
-  and logins, so old versions are not re-probed.
+  and logins, so old versions are not re-probed. New connections and login
+  probes start at v25; retired versions advance automatically on HTTP 410.
 - **Request budget:** automatic syncing makes at most 240 Aula requests per
   rolling hour (360 in total including actions you take in the app). When the
   budget is spent the add-on waits instead of contacting Aula.
@@ -397,6 +398,19 @@ items when supplied by Aula. Names are not inferred from a post's audience or
 the currently selected child. Missing context leaves the name unchanged.
 Existing conversations collect this context gradually during normal syncs;
 saved summaries and translations are reused.
+
+Children with extended access are discovered from Aula's guardian context,
+alongside children returned by login profiles. Posts, albums and photo-tag
+choices use these same relationships. Missing child or guardian identifiers
+are reported explicitly rather than guessing access or showing an empty
+source as successfully synced.
+
+Official school-home and parent meetings with bookable time slots use the
+appointment selected for the specific child. Duplicate guardian answers produce
+one appointment; another child's booking or an unbooked meeting is not added.
+Fixed meetings retain their supplied dates when explicitly assigned to that
+child. Invalid booking data shows a source error and preserves cached dates.
+The existing configured calendar lookahead and filters still apply.
 
 ## Notifications
 

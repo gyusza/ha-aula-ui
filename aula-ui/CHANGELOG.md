@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.9.64
+
+- Start direct Aula requests and login probes at API v25, retaining automatic
+  version upgrades and persisted working versions.
+- Discover extended-access children from guardian context as well as login
+  profiles. Use the merged relationships for posts, album access and photo
+  tag choices without guessing child identifiers.
+- Show the child's exact booked school-home or parent meeting appointment,
+  not the full booking window. Deduplicate guardian answers and exclude
+  unbooked meetings; invalid booking data keeps cached dates and shows an error.
+
 ## 1.9.63
 
 - Show Aula's author context beside names in posts, conversation replies, albums

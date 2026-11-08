@@ -7,26 +7,29 @@ import time
 from typing import Any
 from urllib.parse import urlencode
 
-from .aula_api import AulaApiError, _call
+from .aula_api import AulaApiError, _call, fetch_guardian_profiles, thread_matches_child
 from .messages import sender_details
 
 
 def profile_context(client: Any, children: Any) -> tuple[list[str], dict[str, set[str]]]:
     """Guardian and child institution profile ids (Aula returns nothing without both), plus institution codes per child."""
-    profiles = (_call(client, "?method=profiles.getProfilesByLogin").get("data") or {}).get("profiles")
-    if not isinstance(profiles, list):
-        raise AulaApiError("Aula profiles response has no profiles list")
+    profiles = fetch_guardian_profiles(client)
     ids: list[str] = []
     codes: dict[str, set[str]] = {}
     for profile in profiles:
         for relation in profile.get("children") or []:
             for child in children:
-                if not (str(relation.get("profileId")) == str(getattr(child, "aula_child_id", "")) or
-                        (getattr(child, "aula_name", "") or child.name) in str(relation.get("name", ""))):
+                if not thread_matches_child({"regardingChildren": [{
+                    "profileId": relation.get("profileId"), "displayName": relation.get("name"),
+                }]}, child):
                     continue
+                guardians = [guardian for guardian in profile.get("institutionProfiles") or []
+                             if guardian.get("institutionCode") == relation.get("institutionCode")
+                             and str(guardian.get("id") or "").isdigit()]
+                if not guardians:
+                    raise AulaApiError(f"No guardian/child institution profiles for {child.slug}; cached albums were retained.")
                 ids.append(str(relation["id"]))
-                ids.extend(str(guardian["id"]) for guardian in profile.get("institutionProfiles") or []
-                           if guardian.get("institutionCode") == relation.get("institutionCode"))
+                ids.extend(str(guardian["id"]) for guardian in guardians)
                 codes.setdefault(child.slug, set()).add(str(relation.get("institutionCode")))
     return list(dict.fromkeys(ids)), codes
 
@@ -162,9 +165,7 @@ def album_detail(client: Any, children: Any, album_id: str) -> dict[str, Any]:
 
 
 def tag_choices(client: Any, children: Any, album: dict[str, Any]) -> list[dict[str, str]]:
-    profiles = (_call(client, "?method=profiles.getProfilesByLogin").get("data") or {}).get("profiles")
-    if not isinstance(profiles, list):
-        raise AulaApiError("Aula profiles response has no profiles list")
+    profiles = fetch_guardian_profiles(client)
     institutions = {
         str(group.get("institutionCode")) for group in album.get("sharedWithGroups") or []
         if isinstance(group, dict) and group.get("institutionCode")

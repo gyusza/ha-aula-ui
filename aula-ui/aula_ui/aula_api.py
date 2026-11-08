@@ -76,6 +76,17 @@ def _call(client: Any, uri: str) -> dict[str, Any]:
     return payload
 
 
+def fetch_guardian_profiles(client: Any) -> list[dict[str, Any]]:
+    """Use the direct client's merged login/context relationships when available."""
+    read = getattr(client, "guardian_profiles", None)
+    if callable(read):
+        return read()
+    profiles = (_call(client, "?method=profiles.getProfilesByLogin").get("data") or {}).get("profiles")
+    if not isinstance(profiles, list):
+        raise AulaApiError("Aula profiles response has no profiles list")
+    return profiles
+
+
 def fetch_threads(client: Any, pages: int = 2) -> list[dict[str, Any]]:
     """Return raw thread dicts, newest first, across ``pages`` pages."""
     threads: list[dict[str, Any]] = []
