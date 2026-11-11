@@ -573,11 +573,22 @@ function renderPresence() {
     }
     row.append(el("span", `presence-status ${label.state}`, label.status));
     if (label.detail) row.append(el("p", "presence-detail", label.detail));
-    row.append(pickupButton(child));
+    row.append(pickupButton(child, entry));
     container.append(row);
   }
 }
 const pickupState = new Map();
+function pickupDateInZone(timeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {timeZone, year: "numeric", month: "2-digit", day: "2-digit"})
+    .formatToParts(new Date());
+  const part = type => parts.find(value => value.type === type).value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+function shiftPickupDate(day, days) {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 async function fetchPickup(child, day = "") {
   const query = new URLSearchParams({child: child.slug});
   if (day) query.set("date", day);
@@ -589,30 +600,35 @@ async function fetchPickup(child, day = "") {
   }
   return result;
 }
-function pickupButton(child) {
+function pickupButton(child, presence) {
+  const pickedUp = presence.status === "Picked up";
+  const todayDate = presence.timezone ? pickupDateInZone(presence.timezone) : "";
+  const targetDate = todayDate ? shiftPickupDate(todayDate, pickedUp ? 1 : 0) : "";
   let cached = pickupState.get(child.slug);
-  if (!cached) {
-    cached = {data: null, error: "", checked: 0, busy: false};
+  if (!cached || cached.date !== targetDate) {
+    cached = {data: null, error: "", checked: 0, busy: false, date: targetDate};
     pickupState.set(child.slug, cached);
   }
   if (!cached.busy && Date.now() - cached.checked > 300000) {
     cached.busy = true;
     cached.checked = Date.now();
-    fetchPickup(child).then(data => { cached.data = data; cached.error = ""; })
+    fetchPickup(child, targetDate).then(data => { cached.data = data; cached.error = ""; })
       .catch(error => { cached.error = error.message; })
       .finally(() => { cached.busy = false; renderPresence(); });
   }
-  const plans = cached.data?.plans || [];
+  const plans = cached.data?.date === targetDate ? cached.data.plans : [];
   const label = plans.filter(plan => plan.activity_type === 0 && plan.pickup_time)
     .map(plan => `${plan.pickup_time} · ${plan.pickup_person || "Person not set"}`).join(" / ");
   const button = el("button", "pickup-toggle", cached.error ? "Pickup unavailable · Retry"
-    : cached.busy && !cached.data ? "Checking pickup…" : label ? `Pickup ${label}` : "Set pickup");
+    : cached.busy && !cached.data ? "Checking pickup…"
+      : pickedUp ? label ? `Tomorrow pickup ${label}` : "Set pickup for tomorrow"
+        : label ? `Pickup ${label}` : "Set pickup");
   button.type = "button";
   button.setAttribute("aria-label", `${child.name}: ${button.textContent}`);
-  button.addEventListener("click", () => openPickupSheet(child));
+  button.addEventListener("click", () => openPickupSheet(child, pickedUp, presence.timezone));
   return button;
 }
-function openPickupSheet(child) {
+function openPickupSheet(child, afterPickedUp = false, timeZone = "") {
   const dialog = el("dialog", "pickup-sheet");
   dialog.setAttribute("aria-label", `${child.name} pickup plan`);
   const head = el("div", "pickup-sheet-head");
@@ -626,6 +642,7 @@ function openPickupSheet(child) {
   const shortcuts = el("div", "pickup-date-shortcuts");
   const today = el("button", "action", "Today"), tomorrow = el("button", "action", "Tomorrow");
   today.type = tomorrow.type = "button";
+  today.hidden = afterPickedUp;
   shortcuts.append(today, tomorrow);
   function field(text, input) {
     const label = el("label", "pickup-field");
@@ -665,7 +682,8 @@ function openPickupSheet(child) {
     customMode();
     const allowed = plan?.can_edit && !plan.is_on_vacation && !plan.is_closed;
     save.disabled = !allowed;
-    status.textContent = allowed ? `Times use ${data.timezone}. This does not check your child out.`
+    status.textContent = allowed ? `${afterPickedUp ? `${child.name} has been picked up today; this is tomorrow's plan. ` : ""}`
+      + `Times use ${data.timezone}. This does not check your child out.`
       : plan?.is_on_vacation || plan?.is_closed ? "The child is absent or the institution is closed on this date."
         : plan?.reason || "Choose an institution.";
   }
@@ -677,14 +695,12 @@ function openPickupSheet(child) {
       if (request !== generation || !dialog.isConnected) return;
       data = result;
       if (!todayDate) {
-        const parts = new Intl.DateTimeFormat("en-CA", {timeZone: data.timezone, year: "numeric", month: "2-digit", day: "2-digit"})
-          .formatToParts(new Date());
-        const part = type => parts.find(part => part.type === type).value;
-        todayDate = `${part("year")}-${part("month")}-${part("day")}`;
-        date.min = todayDate;
+        todayDate = pickupDateInZone(data.timezone);
+        date.min = afterPickedUp ? shiftPickupDate(todayDate, 1) : todayDate;
         const max = new Date(`${todayDate}T12:00:00Z`); max.setUTCDate(max.getUTCDate() + 90);
         date.max = max.toISOString().slice(0, 10);
       }
+      if (afterPickedUp && !day) return load(shiftPickupDate(todayDate, 1));
       date.value = data.date;
       institution.replaceChildren(...data.plans.map(plan => {
         const option = el("option", "", `Institution ${plan.institution_profile_id}${plan.can_edit ? "" : " · read-only"}`);
@@ -725,8 +741,7 @@ function openPickupSheet(child) {
   today.addEventListener("click", () => load());
   tomorrow.addEventListener("click", () => {
     if (!todayDate) return;
-    const next = new Date(`${todayDate}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
-    load(next.toISOString().slice(0, 10));
+    load(shiftPickupDate(todayDate, 1));
   });
   form.addEventListener("submit", async event => {
     event.preventDefault();
@@ -749,11 +764,11 @@ function openPickupSheet(child) {
       }
       data = {...data, plans: result.plans};
       saved = true;
-      if (day === todayDate) {
-        pickupState.set(child.slug, {data: result, checked: Date.now(), error: "", busy: false});
+      if (day === todayDate || afterPickedUp && day === shiftPickupDate(todayDate, 1)) {
+        pickupState.set(child.slug, {data: result, checked: Date.now(), error: "", busy: false, date: day});
         renderPresence();
       }
-      if (day === todayDate) dialog.close();
+      if (day === todayDate && !afterPickedUp) dialog.close();
       else status.textContent = `Saved in Aula: ${child.name} · ${day} · ${time.value} · ${name}.`;
     } catch (error) {
       data = null;
@@ -769,7 +784,7 @@ function openPickupSheet(child) {
   dialog.addEventListener("cancel", event => { if (busy) event.preventDefault(); });
   dialog.addEventListener("close", () => { generation++; dialog.remove(); }, {once: true});
   institutionField.hidden = customField.hidden = true;
-  load();
+  load(afterPickedUp && timeZone ? shiftPickupDate(pickupDateInZone(timeZone), 1) : "");
 }
 function aiProgressLabel(progress) {
   if (!progress || progress.status === "disabled" || progress.status === "idle"

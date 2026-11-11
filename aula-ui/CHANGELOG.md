@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.67
+
+- When Aula reports that a child has been picked up, make the pickup control
+  target tomorrow. Show tomorrow's saved plan when available and prevent
+  selecting today, since a same-day pickup time has already passed.
+
 ## 1.9.66
 
 - Add compact pickup controls below each child's presence status, with a

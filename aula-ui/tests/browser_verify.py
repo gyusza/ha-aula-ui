@@ -898,6 +898,7 @@ async def pickup_controls(browser, url):
     editable = True
     current_time = "16:00"
     current_person = "Alex"
+    picked_up = False
     child = {"slug": "alma", "name": "Alma", "institution_type": "daycare"}
 
     async def pickup_api(route):
@@ -923,7 +924,13 @@ async def pickup_controls(browser, url):
             "pickup_people": [{"relatedPersons": [{"name": "Alex", "relation": "Parent"}],
                                "pickupSuggestions": [{"pickupName": "Sam"}]}]})
 
-    await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [], "children": [child], "presence": []}))
+    async def feed_api(route):
+        status = "Picked up" if picked_up else "Present"
+        await route.fulfill(json={"items": [], "children": [child], "presence": [
+            {"child_slug": "alma", "name": "Alma", "status": status, "state": "away" if picked_up else "present",
+             "timezone": "Europe/Copenhagen"}]})
+
+    await page.route("**/api/feed", feed_api)
     await page.route("**/api/pickup?*", pickup_api)
     await page.route("**/api/pickup", pickup_api)
     try:
@@ -976,6 +983,17 @@ async def pickup_controls(browser, url):
             await page.set_viewport_size({"width": width, "height": 844})
             assert await sheet.evaluate("dialog => dialog.scrollWidth <= dialog.clientWidth")
         await sheet.get_by_role("button", name="Close pickup plan", exact=True).click()
+        picked_up = True
+        await page.reload(wait_until="networkidle")
+        tomorrow_date = (day + timedelta(days=1)).isoformat()
+        await page.get_by_role("button", name="Alma: Tomorrow pickup 14:30 · Taylor", exact=True).wait_for()
+        await page.get_by_role("button", name="Alma: Tomorrow pickup 14:30 · Taylor", exact=True).click()
+        await page.wait_for_function(
+            "date => document.querySelector('.pickup-form input[type=date]').value === date",
+            arg=tomorrow_date)
+        assert await page.locator(".pickup-date-shortcuts button").filter(has_text="Today").is_hidden()
+        assert await page.locator(".pickup-form input[type=date]").get_attribute("min") == tomorrow_date
+        await page.get_by_role("button", name="Close pickup plan", exact=True).click()
     finally:
         await page.close()
 

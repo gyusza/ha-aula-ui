@@ -391,6 +391,8 @@ child, date, time and person in a final confirmation. The old row stays until
 Aula confirms the change; future dates show a saved confirmation without
 changing today's row. Editing is disabled with a clear reason when Aula does
 not permit it. Unconfirmed writes require checking Aula's plan before retrying.
+Once Aula reports a child has been picked up, the row switches to tomorrow's
+plan; the editor defaults to tomorrow and does not allow choosing today.
 These authenticated app controls do not require MCP to be enabled and are
 independent of `mcp_allow_writes`, which gates only connector writes.
 
