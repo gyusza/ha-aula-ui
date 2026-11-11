@@ -93,6 +93,40 @@ def test_photo_tag_api_validates_requests_and_surfaces_errors(server, monkeypatc
         service.server_close()
 
 
+def test_pickup_api_requires_ingress_confirmation_and_settings_header(monkeypatch):
+    from unittest.mock import Mock
+    from aula_ui.aula_api import AulaApiError
+
+    plans = Mock()
+    plans.get.return_value = {"date": "2026-11-12", "plans": []}
+    plans.set.return_value = {"confirmed": True, "plans": []}
+    monkeypatch.setattr("aula_ui.mcp.PickupPlans", lambda controller: plans)
+    controller = SimpleNamespace(config=SimpleNamespace(timezone="Europe/Copenhagen"))
+    service = start_server(controller, port=0, allowed_ip="127.0.0.1")
+    url = f"http://127.0.0.1:{service.server_port}/api/pickup"
+    value = {"child": "alma", "date": "2026-11-12", "time": "13:45",
+             "pickup_person": "Alex", "confirmed": True, "institution_profile_id": "20"}
+    try:
+        response = requests.get(url, params={"child": "alma", "date": "2026-11-12"}, timeout=5)
+        assert response.status_code == 200 and response.headers["Cache-Control"] == "no-store"
+        plans.get.assert_called_once_with("alma", "2026-11-12")
+        for headers in ({}, {"X-Aula-Request": "refresh"}):
+            assert requests.post(url, json=value, headers=headers, timeout=5).status_code == 403
+        assert not plans.set.called
+        headers = {"X-Aula-Request": "settings"}
+        for invalid in ({}, {**value, "extra": True}, []):
+            assert requests.post(url, json=invalid, headers=headers, timeout=5).status_code == 400
+        assert requests.post(url, json=value, headers=headers, timeout=5).json()["confirmed"]
+        plans.set.assert_called_once_with("alma", "2026-11-12", "13:45", "Alex", True, "20")
+        plans.set.side_effect = AulaApiError("Aula did not confirm")
+        assert requests.post(url, json=value, headers=headers, timeout=5).status_code == 502
+        plans.get.side_effect = PermissionError("Read denied")
+        assert requests.get(url, params={"child": "alma"}, timeout=5).status_code == 403
+    finally:
+        service.shutdown()
+        service.server_close()
+
+
 def test_unknown_paths_never_serve_private_files(server):
     assert requests.get(server + "/state.json", timeout=5).status_code == 404
     assert requests.get(server + "/%2e%2e/config.py", timeout=5).status_code == 404

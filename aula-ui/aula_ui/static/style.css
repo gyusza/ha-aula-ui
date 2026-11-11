@@ -1,4 +1,15 @@
 :root{color-scheme:dark;--bg:#0e1113;--surface:#181c1f;--raised:#2b3339;--card:#20272c;--line:#46525b;--text:#eef1f3;--muted:#b0bec7;--orange:#ff6534;--blue:#83c7f5;--pink:#e6b2e9;--body-text:#b9c7cf;--community:#c6d3da;--flair-bg:#252d32;--flair-text:#c6d3da;--child-bg:#203542;--daycare-bg:#38273b;--family-bg:#3b2b22;--family-text:#ffbb94;--translation-bg:#22352b;--translation-text:#a3d2b4;--notice-bg:#38291d;--notice-line:#71503b;--active-text:#ffab8e;--hover-line:var(--muted);--glass:rgba(14,17,19,.82);--nav-glass:rgba(37,43,47,.86)}
+.pickup-toggle{display:block;max-width:100%;min-height:32px;padding:4px 0;border:0;background:none;color:var(--blue);font-size:12px;text-align:left;overflow-wrap:anywhere}
+.pickup-sheet{box-sizing:border-box;width:min(100%,480px);max-width:100%;max-height:85dvh;margin:auto auto 0;padding:20px max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));border:1px solid var(--line);border-radius:20px 20px 0 0;background:var(--card);color:var(--text);overflow:auto}
+.pickup-sheet::backdrop{background:rgba(0,0,0,.6)}
+.pickup-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+.pickup-sheet-head h2{margin:0;font-size:20px}
+.pickup-form{display:grid;gap:12px}
+.pickup-field{display:grid;gap:5px;min-width:0}
+.pickup-field[hidden]{display:none}
+.pickup-field input,.pickup-field select{box-sizing:border-box;width:100%;min-width:0;min-height:44px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);font-size:16px}
+.pickup-date-shortcuts{display:flex;gap:8px}
+.pickup-form>.profile-status{margin:0}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit}
@@ -88,7 +99,7 @@ h1{font-size:23px;line-height:1.25;letter-spacing:-.8px;margin:0;font-weight:750
 .presence-filter::after{content:"";position:absolute;inset:0;border-radius:inherit}
 .presence-filter:focus-visible{outline:none}
 .presence-filter:focus-visible::after{border-radius:12px;outline:2px solid var(--orange);outline-offset:2px}
-.presence-child .sickness-toggle{position:relative;z-index:1}
+.presence-child .sickness-toggle,.presence-child .pickup-toggle{position:relative;z-index:1}
 .presence-child .presence-heading{padding-right:26px}
 .presence-check{position:absolute;top:8px;right:10px;opacity:0}
 .presence-child.selected{border-color:var(--blue)}

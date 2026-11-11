@@ -573,8 +573,203 @@ function renderPresence() {
     }
     row.append(el("span", `presence-status ${label.state}`, label.status));
     if (label.detail) row.append(el("p", "presence-detail", label.detail));
+    row.append(pickupButton(child));
     container.append(row);
   }
+}
+const pickupState = new Map();
+async function fetchPickup(child, day = "") {
+  const query = new URLSearchParams({child: child.slug});
+  if (day) query.set("date", day);
+  const response = await fetch(`api/pickup?${query}`, {cache: "no-store"});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Pickup plan unavailable");
+  if (!Array.isArray(result.plans) || !Array.isArray(result.pickup_people) || !result.date || !result.timezone) {
+    throw new Error("Pickup plan response is incomplete");
+  }
+  return result;
+}
+function pickupButton(child) {
+  let cached = pickupState.get(child.slug);
+  if (!cached) {
+    cached = {data: null, error: "", checked: 0, busy: false};
+    pickupState.set(child.slug, cached);
+  }
+  if (!cached.busy && Date.now() - cached.checked > 300000) {
+    cached.busy = true;
+    cached.checked = Date.now();
+    fetchPickup(child).then(data => { cached.data = data; cached.error = ""; })
+      .catch(error => { cached.error = error.message; })
+      .finally(() => { cached.busy = false; renderPresence(); });
+  }
+  const plans = cached.data?.plans || [];
+  const label = plans.filter(plan => plan.activity_type === 0 && plan.pickup_time)
+    .map(plan => `${plan.pickup_time} · ${plan.pickup_person || "Person not set"}`).join(" / ");
+  const button = el("button", "pickup-toggle", cached.error ? "Pickup unavailable · Retry"
+    : cached.busy && !cached.data ? "Checking pickup…" : label ? `Pickup ${label}` : "Set pickup");
+  button.type = "button";
+  button.setAttribute("aria-label", `${child.name}: ${button.textContent}`);
+  button.addEventListener("click", () => openPickupSheet(child));
+  return button;
+}
+function openPickupSheet(child) {
+  const dialog = el("dialog", "pickup-sheet");
+  dialog.setAttribute("aria-label", `${child.name} pickup plan`);
+  const head = el("div", "pickup-sheet-head");
+  const close = el("button", "icon-button");
+  close.type = "button";
+  close.innerHTML = icon("close");
+  close.setAttribute("aria-label", "Close pickup plan");
+  head.append(el("h2", "", `${child.name} pickup`), close);
+  close.addEventListener("click", () => dialog.close());
+  const form = el("form", "pickup-form");
+  const shortcuts = el("div", "pickup-date-shortcuts");
+  const today = el("button", "action", "Today"), tomorrow = el("button", "action", "Tomorrow");
+  today.type = tomorrow.type = "button";
+  shortcuts.append(today, tomorrow);
+  function field(text, input) {
+    const label = el("label", "pickup-field");
+    input.setAttribute("aria-label", text);
+    label.append(el("span", "", text), input);
+    return label;
+  }
+  const date = el("input"), time = el("input"), institution = el("select"), person = el("select"), custom = el("input");
+  date.type = "date"; time.type = "time"; custom.type = "text";
+  date.required = time.required = person.required = true;
+  custom.maxLength = 100; custom.minLength = 2;
+  const institutionField = field("Institution", institution);
+  const customField = field("Pickup person's name", custom);
+  const status = el("p", "profile-status");
+  status.setAttribute("role", "status");
+  const save = el("button", "action", "Review pickup");
+  save.type = "submit";
+  form.append(shortcuts, field("Date", date), institutionField, field("Pickup time", time),
+    field("Picked up by", person), customField, status, save);
+  dialog.append(head, form);
+  document.body.append(dialog);
+  dialog.showModal();
+  let data = null, busy = false, generation = 0, todayDate = "";
+  function customMode() {
+    customField.hidden = person.value !== "__custom";
+    custom.required = !customField.hidden;
+  }
+  function chosenPlan() { return data?.plans.find(plan => plan.institution_profile_id === institution.value); }
+  function fillPlan() {
+    const plan = chosenPlan();
+    time.value = plan?.pickup_time || "";
+    const current = plan?.pickup_person || "";
+    if (current && ![...person.options].some(option => option.value === current)) {
+      const option = el("option", "", current); option.value = current; person.insertBefore(option, person.lastChild);
+    }
+    person.value = current || "";
+    customMode();
+    const allowed = plan?.can_edit && !plan.is_on_vacation && !plan.is_closed;
+    save.disabled = !allowed;
+    status.textContent = allowed ? `Times use ${data.timezone}. This does not check your child out.`
+      : plan?.is_on_vacation || plan?.is_closed ? "The child is absent or the institution is closed on this date."
+        : plan?.reason || "Choose an institution.";
+  }
+  async function load(day = "") {
+    const request = ++generation;
+    busy = true; save.disabled = true; close.disabled = false; status.textContent = "Checking Aula pickup plan…";
+    try {
+      const result = await fetchPickup(child, day);
+      if (request !== generation || !dialog.isConnected) return;
+      data = result;
+      if (!todayDate) {
+        const parts = new Intl.DateTimeFormat("en-CA", {timeZone: data.timezone, year: "numeric", month: "2-digit", day: "2-digit"})
+          .formatToParts(new Date());
+        const part = type => parts.find(part => part.type === type).value;
+        todayDate = `${part("year")}-${part("month")}-${part("day")}`;
+        date.min = todayDate;
+        const max = new Date(`${todayDate}T12:00:00Z`); max.setUTCDate(max.getUTCDate() + 90);
+        date.max = max.toISOString().slice(0, 10);
+      }
+      date.value = data.date;
+      institution.replaceChildren(...data.plans.map(plan => {
+        const option = el("option", "", `Institution ${plan.institution_profile_id}${plan.can_edit ? "" : " · read-only"}`);
+        option.value = plan.institution_profile_id; return option;
+      }));
+      const editable = data.plans.filter(plan => plan.can_edit);
+      if (editable.length === 1) institution.value = editable[0].institution_profile_id;
+      else if (editable.length > 1) {
+        const option = el("option", "", "Choose institution"); option.value = "";
+        institution.prepend(option); institution.value = "";
+      }
+      institutionField.hidden = data.plans.length === 1;
+      const names = new Set();
+      for (const group of data.pickup_people || []) {
+        for (const parent of group.relatedPersons || []) if (parent.name) names.add(`${parent.name}${parent.relation ? ` (${parent.relation})` : ""}`);
+        for (const suggestion of group.pickupSuggestions || []) if (suggestion.pickupName) names.add(suggestion.pickupName);
+      }
+      person.replaceChildren();
+      const placeholder = el("option", "", "Choose pickup person"); placeholder.value = ""; person.append(placeholder);
+      for (const name of names) { const option = el("option", "", name); option.value = name; person.append(option); }
+      const other = el("option", "", "Someone else…"); other.value = "__custom"; person.append(other);
+      fillPlan();
+    } catch (error) {
+      if (request !== generation || !dialog.isConnected) return;
+      data = null;
+      status.replaceChildren(document.createTextNode(error.message + " "));
+      const retry = el("button", "action", "Retry"); retry.type = "button";
+      retry.addEventListener("click", () => load(day)); status.append(retry);
+    } finally { if (request === generation) busy = false; }
+  }
+  institution.addEventListener("change", fillPlan);
+  person.addEventListener("change", customMode);
+  for (const control of [time, person, custom]) control.addEventListener("input", () => {
+    const plan = chosenPlan();
+    save.disabled = busy || !plan?.can_edit || plan.is_on_vacation || plan.is_closed;
+  });
+  date.addEventListener("change", () => { if (date.value) load(date.value); });
+  today.addEventListener("click", () => load());
+  tomorrow.addEventListener("click", () => {
+    if (!todayDate) return;
+    const next = new Date(`${todayDate}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
+    load(next.toISOString().slice(0, 10));
+  });
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (busy || !data || !chosenPlan()?.can_edit) return;
+    const name = person.value === "__custom" ? custom.value.trim() : person.value;
+    if (!confirm(`Set ${child.name}'s pickup on ${date.value} at ${time.value} by ${name}?\n\nThis updates the plan in Aula; it does not check your child out.`)) return;
+    busy = true; save.disabled = true; close.disabled = true;
+    form.querySelectorAll("input,select,button").forEach(control => { control.disabled = true; });
+    status.textContent = "Saving and confirming in Aula…";
+    const day = date.value;
+    let saved = false;
+    try {
+      const response = await fetch("api/pickup", {method: "POST",
+        headers: {"Content-Type": "application/json", "X-Aula-Request": "settings"},
+        body: JSON.stringify({child: child.slug, date: day, time: time.value, pickup_person: name,
+          confirmed: true, institution_profile_id: institution.value})});
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.confirmed !== true || !Array.isArray(result.plans)) {
+        throw new Error(result.error || "Aula has not confirmed the pickup plan");
+      }
+      data = {...data, plans: result.plans};
+      saved = true;
+      if (day === todayDate) {
+        pickupState.set(child.slug, {data: result, checked: Date.now(), error: "", busy: false});
+        renderPresence();
+      }
+      if (day === todayDate) dialog.close();
+      else status.textContent = `Saved in Aula: ${child.name} · ${day} · ${time.value} · ${name}.`;
+    } catch (error) {
+      data = null;
+      status.replaceChildren(document.createTextNode(`Change not confirmed: ${error.message}. `));
+      const check = el("button", "action", "Check Aula plan"); check.type = "button";
+      check.addEventListener("click", () => load(day)); status.append(check);
+    } finally {
+      busy = false; close.disabled = false;
+      form.querySelectorAll("input,select,button").forEach(control => { control.disabled = false; });
+      save.disabled = saved || !data;
+    }
+  });
+  dialog.addEventListener("cancel", event => { if (busy) event.preventDefault(); });
+  dialog.addEventListener("close", () => { generation++; dialog.remove(); }, {once: true});
+  institutionField.hidden = customField.hidden = true;
+  load();
 }
 function aiProgressLabel(progress) {
   if (!progress || progress.status === "disabled" || progress.status === "idle"

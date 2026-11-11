@@ -64,6 +64,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
     cfg = getattr(controller, "config", None)
     previews = PreviewCache(cfg.data_dir) if cfg is not None and getattr(cfg, "data_dir", None) else None
     mcp = McpEndpoint(controller, sick_days, getattr(cfg, "mcp_key", ""), getattr(cfg, "mcp_allow_writes", False))
+    pickup_plans = mcp.pickup_plans
     class Handler(BaseHTTPRequestHandler):
         timeout = REQUEST_TIMEOUT
         server_version = "AulaUI"
@@ -80,7 +81,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                     path = getattr(self, "path", "").split("?", 1)[0]
                     known = {"/", "/account", "/calendar.ics", "/api/feed", "/api/account",
                              "/api/profiles", "/api/ai-settings", "/api/feed/reprocess", "/api/feed/reading",
-                             "/api/feed/attachment", "/api/feed/media", "/api/sickness",
+                             "/api/feed/attachment", "/api/feed/media", "/api/sickness", "/api/pickup",
                              "/api/sync-settings", "/sync-settings.js",
                              "/api/notifications", "/api/notifications/test", "/api/notifications/history",
                              "/api/notifications/read", "/notifications.js",
@@ -256,6 +257,20 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                 except AulaApiError as error:
                     _LOGGER.warning("Sickness status unavailable: %s", describe(error))
                     self._send(json.dumps({"error": str(error)}).encode(), "application/json", 502)
+                    return
+                self._send(json.dumps(result).encode(), "application/json")
+                return
+            if path == "/api/pickup":
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
+                query = parse_qs(self.path.partition("?")[2])
+                try:
+                    day = query.get("date", [datetime.now(ZoneInfo(controller.config.timezone)).date().isoformat()])[0]
+                    result = pickup_plans.get(query.get("child", [""])[0], day)
+                except (ValueError, LookupError, PermissionError, AulaApiError) as error:
+                    status = 403 if isinstance(error, PermissionError) else 404 if isinstance(error, LookupError) else 502 if isinstance(error, AulaApiError) else 400
+                    _LOGGER.warning("event=pickup.read_failed error_type=%s", type(error).__name__)
+                    self._send(json.dumps({"error": str(error)}).encode(), "application/json", status)
                     return
                 self._send(json.dumps(result).encode(), "application/json")
                 return
@@ -518,6 +533,29 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
             # from initiating work through an authenticated ingress session.
             if self.headers.get("X-Aula-Request") not in ("refresh", "settings"):
                 self.send_error(403)
+                return
+            if self.path == "/api/pickup":
+                if self.headers.get("X-Aula-Request") != "settings":
+                    self.send_error(403)
+                    return
+                try:
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < length <= 2048:
+                        raise ValueError("Supply a confirmed pickup plan")
+                    value = json.loads(self.rfile.read(length))
+                    required = {"child", "date", "time", "pickup_person", "confirmed"}
+                    if not isinstance(value, dict) or not required <= set(value) \
+                            or set(value) - required - {"institution_profile_id"}:
+                        raise ValueError("Supply a confirmed pickup plan")
+                    result = pickup_plans.set(value["child"], value["date"], value["time"],
+                                              value["pickup_person"], value["confirmed"],
+                                              value.get("institution_profile_id"))
+                except (ValueError, UnicodeDecodeError, LookupError, PermissionError, AulaApiError) as error:
+                    status = 403 if isinstance(error, PermissionError) else 404 if isinstance(error, LookupError) else 502 if isinstance(error, AulaApiError) else 400
+                    _LOGGER.warning("event=pickup.write_failed error_type=%s", type(error).__name__)
+                    self._send(json.dumps({"error": str(error)}).encode(), "application/json", status)
+                    return
+                self._send(json.dumps(result).encode(), "application/json")
                 return
             if self.path == "/api/sickness":
                 if self.headers.get("X-Aula-Request") != "settings":

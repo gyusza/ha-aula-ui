@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.66
+
+- Add compact pickup controls below each child's presence status, with a
+  mobile date/time/person sheet, Today/Tomorrow shortcuts and custom names.
+- Confirm the exact plan before saving; show success only after Aula verifies
+  it. Future changes leave today's row unchanged, unavailable permissions are
+  explicit, and unconfirmed saves require a fresh read before retrying.
+- Share the MCP pickup backend without requiring connector writes to be enabled.
+
 ## 1.9.65
 
 - Add MCP `get_pickup_plan` and, when writes are enabled, `set_pickup_plan`.

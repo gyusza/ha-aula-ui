@@ -383,14 +383,16 @@ absence/closed-day flags and unreadable templates fail explicitly. It does not
 create or delete saved pickup people. No live pickup writes are made merely
 by reading or testing the connector.
 
-**Recommended app UX (not implemented):** a small **Pickup 13:45 · Alex**
-row below each child's presence status, or **Set pickup** when unset. Tap to
+**In-app pickup planning:** a small **Pickup 13:45 · Alex** row appears
+below each child's presence status, or **Set pickup** when unset. Tap to
 open a bottom sheet with Today/Tomorrow/date selection, a time picker and
 Aula's pickup-person dropdown with an explicit custom-name option. Show the
-child, date, time and person in a final confirmation; retain the old row until
-Aula confirms the change. Disable editing with a clear reason when Aula does
-not permit it. Keep pickup actions beside presence, not in Settings or a new
-navigation destination.
+child, date, time and person in a final confirmation. The old row stays until
+Aula confirms the change; future dates show a saved confirmation without
+changing today's row. Editing is disabled with a clear reason when Aula does
+not permit it. Unconfirmed writes require checking Aula's plan before retrying.
+These authenticated app controls do not require MCP to be enabled and are
+independent of `mcp_allow_writes`, which gates only connector writes.
 
 Each child's display name, school/daycare type and subscription inclusion are
 stored on the add-on and shared across devices. Display names do not change

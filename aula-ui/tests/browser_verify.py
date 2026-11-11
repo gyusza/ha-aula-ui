@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 import pytest
 import qrcode
@@ -884,6 +885,97 @@ async def album_tagging(browser, url):
         await page.get_by_role("button", name="View photo1.jpg", exact=True).click()
         await page.get_by_role("dialog").get_by_role("button", name="Close", exact=True).wait_for()
         assert await page.locator(".image-viewer-tag").count() == 0
+    finally:
+        await page.close()
+
+
+async def pickup_controls(browser, url):
+    page = await browser.new_page(viewport={"width": 390, "height": 844})
+    day = datetime.now(ZoneInfo("Europe/Copenhagen")).date()
+    selected_day = day.isoformat()
+    writes = []
+    fail = False
+    editable = True
+    current_time = "16:00"
+    current_person = "Alex"
+    child = {"slug": "alma", "name": "Alma", "institution_type": "daycare"}
+
+    async def pickup_api(route):
+        nonlocal selected_day, current_time, current_person
+        if route.request.method == "POST":
+            value = route.request.post_data_json
+            writes.append(value)
+            assert route.request.headers["x-aula-request"] == "settings"
+            if fail:
+                await route.fulfill(status=502, json={"error": "Aula has not confirmed"})
+                return
+            current_time, current_person = value["time"], value["pickup_person"]
+            await route.fulfill(json={"confirmed": True, "date": value["date"], "timezone": "Europe/Copenhagen",
+                "plans": [{"institution_profile_id": "20", "can_edit": True,
+                           "activity_type": 0, "pickup_time": current_time, "pickup_person": current_person}]})
+            return
+        from urllib.parse import urlsplit, parse_qs
+        selected_day = parse_qs(urlsplit(route.request.url).query).get("date", [day.isoformat()])[0]
+        await route.fulfill(json={"date": selected_day, "timezone": "Europe/Copenhagen",
+            "plans": [{"institution_profile_id": "20", "can_edit": editable,
+                       "reason": "" if editable else "Aula does not allow pickup editing.",
+                       "activity_type": 0, "pickup_time": current_time, "pickup_person": current_person}],
+            "pickup_people": [{"relatedPersons": [{"name": "Alex", "relation": "Parent"}],
+                               "pickupSuggestions": [{"pickupName": "Sam"}]}]})
+
+    await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [], "children": [child], "presence": []}))
+    await page.route("**/api/pickup?*", pickup_api)
+    await page.route("**/api/pickup", pickup_api)
+    try:
+        await page.goto(url, wait_until="networkidle")
+        await page.get_by_role("button", name="Alma: Pickup 16:00 · Alex", exact=True).click()
+        sheet = page.get_by_role("dialog", name="Alma pickup plan", exact=True)
+        await sheet.get_by_label("Pickup time", exact=True).wait_for()
+        await page.wait_for_function("() => document.querySelector('.pickup-form input[type=time]').value === '16:00'")
+        await sheet.get_by_label("Picked up by", exact=True).select_option("Sam")
+        await sheet.get_by_label("Pickup time", exact=True).fill("13:45")
+        page.once("dialog", lambda dialog: dialog.dismiss())
+        await sheet.get_by_role("button", name="Review pickup", exact=True).click()
+        assert not writes
+        await sheet.get_by_role("button", name="Tomorrow", exact=True).click()
+        await page.wait_for_function("date => document.querySelector('.pickup-form input[type=date]').value === date",
+                                     arg=(day + timedelta(days=1)).isoformat())
+        await sheet.get_by_label("Picked up by", exact=True).select_option("__custom")
+        await sheet.get_by_label("Pickup person's name", exact=True).fill("Taylor")
+        await sheet.get_by_label("Pickup time", exact=True).fill("13:45")
+        page.once("dialog", lambda dialog: dialog.accept())
+        await sheet.get_by_role("button", name="Review pickup", exact=True).click()
+        await sheet.get_by_text("Saved in Aula:", exact=False).wait_for()
+        assert writes == [{"child": "alma", "date": (day + timedelta(days=1)).isoformat(), "time": "13:45",
+                           "pickup_person": "Taylor", "confirmed": True, "institution_profile_id": "20"}]
+        assert await page.get_by_role("button", name="Alma: Pickup 16:00 · Alex", exact=True).count() == 1
+        await sheet.get_by_role("button", name="Today", exact=True).click()
+        await page.wait_for_function("() => !document.querySelector('.pickup-form button[type=submit]').disabled")
+        fail = True
+        page.once("dialog", lambda dialog: dialog.accept())
+        await sheet.get_by_role("button", name="Review pickup", exact=True).click()
+        await sheet.get_by_text("Change not confirmed:", exact=False).wait_for()
+        assert await sheet.get_by_role("button", name="Review pickup", exact=True).is_disabled()
+        assert await page.get_by_role("button", name="Alma: Pickup 16:00 · Alex", exact=True).count() == 1
+        editable = False
+        await sheet.get_by_role("button", name="Check Aula plan", exact=True).click()
+        await sheet.get_by_text("Aula does not allow pickup editing.", exact=True).wait_for()
+        assert await sheet.get_by_role("button", name="Review pickup", exact=True).is_disabled()
+        fail = False
+        editable = True
+        await sheet.get_by_role("button", name="Today", exact=True).click()
+        await page.wait_for_function("() => !document.querySelector('.pickup-form button[type=submit]').disabled")
+        await sheet.get_by_label("Pickup time", exact=True).fill("14:30")
+        page.once("dialog", lambda dialog: dialog.accept())
+        await sheet.get_by_role("button", name="Review pickup", exact=True).click()
+        await page.get_by_role("button", name="Alma: Pickup 14:30 · Taylor", exact=True).wait_for()
+        assert not await sheet.count()
+        await page.get_by_role("button", name="Alma: Pickup 14:30 · Taylor", exact=True).click()
+        await sheet.get_by_label("Pickup time", exact=True).wait_for()
+        for width in (320, 390, 768, 1280):
+            await page.set_viewport_size({"width": width, "height": 844})
+            assert await sheet.evaluate("dialog => dialog.scrollWidth <= dialog.clientWidth")
+        await sheet.get_by_role("button", name="Close pickup plan", exact=True).click()
     finally:
         await page.close()
 
@@ -1865,6 +1957,7 @@ async def verify():
                     await album_tagging(browser, url)
                     await image_recovery(browser, url)
                     await feed_type_colors(browser, url)
+                    await pickup_controls(browser, url)
                     await mcp_settings(browser, url)
                     await sickness_reporting(browser, url)
                     await retired_siri_settings(browser, url)
