@@ -465,6 +465,10 @@ full duration and start/end times on waking. This is off by default in both
 notification sections and follows their child selection. Existing naps are
 baselined silently; restarts and repeated polls do not resend them. Alerts
 arrive on the next normal Aula sync, not necessarily immediately.
+Enable **Child picked up** to be notified when Aula's current presence status
+changes from a known state to **Picked up**. It includes the recorded pickup
+time and person when available, is deduplicated to once per child per local
+day, and is off by default.
 
 Settings → Notifications sends new feed items through Home Assistant's notify
 action. Add targets with the selector and remove them with the row buttons,
@@ -504,7 +508,9 @@ notifications, untick every Home Assistant target.
 The bell in the top bar lists the last 200 notifications sent (HA notify and app
 notifications), newest first, from the time this feature was installed. A dot on
 the bell means something is unread. Conversations are read once read in Aula or
-opened here; other items are read when opened. Nap notifications are always read.
+opened here; other items are read when opened. **Mark all read** clears unread
+indicators in this history only; it does not change Aula's read state. Nap and
+pickup notifications are always read.
 
 ## Calendar
 

@@ -84,7 +84,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                              "/api/feed/attachment", "/api/feed/media", "/api/sickness", "/api/pickup",
                              "/api/sync-settings", "/sync-settings.js",
                              "/api/notifications", "/api/notifications/test", "/api/notifications/history",
-                             "/api/notifications/read", "/notifications.js",
+                             "/api/notifications/read", "/api/notifications/read-all", "/notifications.js",
                              "/api/push/subscribe", "/api/push/device", "/api/push/remove", "/api/push/test",
                              "/api/calendar/review", "/api/calendar/archive", "/api/calendar/rotate",
                              "/api/calendar/categories", "/api/whoami", "/api/version", "/api/feed/read", "/api/gallery/album", "/api/gallery/image", "/api/gallery/tag",
@@ -710,6 +710,7 @@ def start_server(controller: Any, port: int = 8099, allowed_ip: str = INGRESS_IP
                 self._send(b'{"queued":true}', "application/json", 202)
                 return
             if self.path in ("/api/notifications", "/api/notifications/test", "/api/notifications/read",
+                             "/api/notifications/read-all",
                              "/api/push/subscribe",
                              "/api/push/device", "/api/push/remove", "/api/push/test"):
                 if self.headers.get("X-Aula-Request") != "settings":

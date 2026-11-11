@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.68
+
+- Add **Mark all read** to notification history. This only clears the add-on's
+  notification indicators and does not change Aula's upstream read state.
+- Add an opt-in **Child picked up** notification for Home Assistant and app
+  push, with recorded pickup details when available. It silently baselines the
+  first known status and deduplicates pickup alerts per child per local day.
+
 ## 1.9.67
 
 - When Aula reports that a child has been picked up, make the pickup control

@@ -28,7 +28,8 @@
 
   function categoryOptions(data) {
     const labels = {post: "Posts", message: "Messages", calendar: "Aula events",
-      lesson: "Lessons", homework: "Homework", weekplan: "Week plans", suggestion: "AI suggestions", nap: "Naps"};
+      lesson: "Lessons", homework: "Homework", weekplan: "Week plans", suggestion: "AI suggestions",
+      nap: "Naps", pickup: "Child picked up"};
     return (data.available_categories || []).map(category => ({
       value: category.key, label: labels[category.key] || category.label,
     }));

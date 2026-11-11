@@ -1119,32 +1119,57 @@ async def notification_history(browser, url):
     entries = [
         {"id": "a", "item_id": "post:1", "category": "post", "title": "Trip", "message": "Boots",
          "sent_at": "2026-10-26T10:00:00+00:00", "read": False, "available": True},
+        {"id": "c", "item_id": "post:2", "category": "post", "title": "Class", "message": "Lunch",
+         "sent_at": "2026-10-26T09:30:00+00:00", "read": False, "available": True},
         {"id": "b", "item_id": "", "category": "nap", "title": "Alma woke up", "message": "Slept",
          "sent_at": "2026-10-26T09:00:00+00:00", "read": True, "available": False},
     ]
-    state = {"unread": 1}
+    state = {"unread": 2}
     posts = []
+    all_reads = []
     def body():
         return {"items": [{**e, "read": e["read"] or not state["unread"]} for e in entries], "unread": state["unread"]}
     await page.route("**/api/feed", lambda route: route.fulfill(json={"items": [
         {"id": "post:1", "title": "Trip", "content_type": "Post", "date": "2026-10-26T10:00:00Z",
-         "summary": "Boots", "children": [], "child_slugs": []}], "children": []}))
+         "summary": "Boots", "children": [], "child_slugs": []},
+        {"id": "post:2", "title": "Class", "content_type": "Post", "date": "2026-10-26T09:30:00Z",
+         "summary": "Lunch", "children": [], "child_slugs": []}], "children": []}))
     await page.route("**/api/notifications/history", lambda route: route.fulfill(json=body()))
     async def read(route):
-        posts.append(route.request.post_data_json)
-        state["unread"] = 0
+        value = route.request.post_data_json
+        posts.append(value)
+        next(entry for entry in entries if entry["item_id"] == value["id"])["read"] = True
+        state["unread"] = sum(not entry["read"] for entry in entries)
         await route.fulfill(json=body())
     await page.route("**/api/notifications/read", read)
+    async def read_all(route):
+        all_reads.append(route.request.post_data_json)
+        for entry in entries:
+            entry["read"] = True
+        state["unread"] = 0
+        await route.fulfill(json=body())
+    await page.route("**/api/notifications/read-all", read_all)
     try:
         await page.goto(url, wait_until="networkidle")
         assert await page.locator(".bell-dot:visible").count() == 1
         await page.locator(".bell-link").click()
         await page.wait_for_selector(".history-row")
-        assert await page.locator(".history-row").count() == 2
-        assert await page.locator(".history-row.unread").count() == 1
-        await page.locator(".history-row.unread a").click()
-        await page.wait_for_function("() => document.querySelector('.bell-dot').hidden")
+        assert await page.locator(".history-row").count() == 3
+        assert await page.locator(".history-row.unread").count() == 2
+        await page.locator(".history-row.unread a").first.click()
+        await page.wait_for_function("() => !document.querySelector('.bell-dot').hidden")
         assert posts == [{"id": "post:1"}]
+        await page.locator(".bell-link").click()
+        await page.wait_for_selector(".history-row.unread")
+        assert await page.locator(".history-row.unread").count() == 1
+        await page.set_viewport_size({"width": 320, "height": 700})
+        assert await page.locator(".history-actions").evaluate("element => element.scrollWidth <= element.clientWidth")
+        await page.set_viewport_size({"width": 390, "height": 844})
+        await page.get_by_role("button", name="Mark all read", exact=True).click()
+        await page.wait_for_function("() => document.querySelector('.bell-dot').hidden")
+        assert all_reads == [{}]
+        assert await page.locator(".history-row.unread").count() == 0
+        assert await page.get_by_role("button", name="Mark all read", exact=True).count() == 0
     finally:
         await page.close()
 
@@ -1400,9 +1425,10 @@ async def push_settings(page, controller):
     assert pushed[-1][1]["headers"]["Content-Encoding"] == "aes128gcm"
     await page.locator(".push-categories input[value=homework]").check()
     await page.locator(".push-categories").get_by_label("Naps", exact=True).check()
+    await page.locator(".push-categories input[value=pickup]").check()
     await form.get_by_role("button", name="Save for this device").click()
     await page.locator(".push-status", has_text="Saved for this device").wait_for()
-    assert "homework" in controller.notifier.push.all()[0]["categories"]
+    assert {"homework", "pickup"} <= set(controller.notifier.push.all()[0]["categories"])
     await page.locator(".push-form").get_by_role("button", name="Turn off").click()
     await page.locator(".push-status", has_text="Turned off").wait_for()
     assert controller.notifier.push.all() == []

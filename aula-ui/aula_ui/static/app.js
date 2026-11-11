@@ -1584,7 +1584,37 @@ function markNotificationOpened(itemId) {
 function renderHistory() {
   const page = document.querySelector("#page");
   page.querySelector(".history-list")?.remove();
+  page.querySelector(".history-actions")?.remove();
   const list = el("ul", "history-list");
+  if (bell.unread) {
+    const actions = el("div", "history-actions");
+    const markAll = el("button", "action", "Mark all read");
+    markAll.type = "button";
+    const note = el("span", "profile-status", "Only this history; it does not mark items read in Aula.");
+    const status = el("span", "profile-status");
+    status.setAttribute("role", "status");
+    markAll.addEventListener("click", async () => {
+      markAll.disabled = true;
+      try {
+        const response = await fetch("api/notifications/read-all", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "X-Aula-Request": "settings"},
+          body: "{}",
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `Request failed (${response.status})`);
+        bell = result;
+        paintBell();
+        renderHistory();
+      } catch (error) {
+        markAll.disabled = false;
+        status.textContent = `Could not mark notifications read: ${error.message}`;
+        status.setAttribute("role", "alert");
+      }
+    });
+    actions.append(note, markAll, status);
+    page.append(actions);
+  }
   if (!bell.items.length) list.append(el("li", "history-empty", "No notifications yet. Notifications sent from now on will be listed here."));
   for (const entry of bell.items) {
     const row = el("li", "history-row" + (entry.read ? "" : " unread"));

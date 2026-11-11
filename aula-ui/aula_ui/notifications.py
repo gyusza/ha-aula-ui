@@ -55,6 +55,7 @@ CATEGORIES = {
     "weekplan": "Week plans",
     "suggestion": "AI calendar suggestions",
     "nap": "Nap started / ended",
+    "pickup": "Child picked up",
 }
 DEFAULT_CATEGORIES = ["post", "message", "calendar", "homework"]
 # Wait this long for AI translation before notifying with the original text.
@@ -109,7 +110,7 @@ def deep_link(base: str, item: dict[str, Any] | None = None) -> str:
         return ""
     if not item or not item.get("id"):
         return base + "/"
-    if item.get("nap"):
+    if item.get("nap") or item.get("pickup"):
         return f"{base}/child/{quote(item['child_slugs'][0], safe='')}"
     kind = "thread" if item.get("thread_messages") else "post"
     return f"{base}/{kind}/{quote(str(item['id']), safe='')}"
@@ -192,6 +193,15 @@ def render(item: dict[str, Any], category: str, zone: str = DEFAULT_TIMEZONE) ->
         duration = f"{minutes // 60}h {minutes % 60}m" if minutes >= 60 else f"{minutes}m"
         last = end.astimezone(ZoneInfo(zone)).strftime("%H:%M")
         return {"title": f"{name} woke up", "message": f"Slept {duration} ({first}–{last})."}
+    if category == "pickup":
+        name = ", ".join(item.get("children") or []) or "Your child"
+        details = []
+        if item.get("check_out_time"):
+            details.append(f"Picked up at {_plain(item['check_out_time'], 40)}.")
+        if item.get("exit_with"):
+            details.append(f"Collected by {_plain(item['exit_with'], 100)}.")
+        return {"title": f"{name} was picked up",
+                "message": " ".join(details) or "Aula marked the child as picked up."}
     title = item.get("translated_title") or item.get("title") or "Untitled"
     children = ", ".join(item.get("children") or [])
     prefix = f"{children} · " if children else ""
@@ -377,6 +387,68 @@ class Notifier:
                         count += 1
         return count
 
+    def observe_pickups(self, presence: list[dict[str, Any]]) -> int:
+        """Notify once when a fresh known presence status changes to picked up."""
+        with self.lock:
+            store = self.controller.store
+            saved_states = store.get("notification_pickups")
+            previous = dict(saved_states) if isinstance(saved_states, dict) else {}
+            settings = self.settings()
+            devices = self.push.all()
+            ready = []
+            for child in presence:
+                slug, status = child.get("child_slug"), child.get("status")
+                if (not isinstance(slug, str) or not slug or child.get("state") == "unknown"
+                        or not isinstance(status, str) or status in ("Unknown", "")):
+                    continue
+                stamp = child.get("updated_at")
+                if not isinstance(stamp, str):
+                    _LOGGER.warning("event=notifications.pickup_skipped reason=invalid_presence_time")
+                    continue
+                try:
+                    zone = ZoneInfo(child.get("timezone") or self.controller.config.timezone)
+                    updated = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                    if updated.tzinfo is None:
+                        raise ValueError("Presence time is missing a timezone")
+                    day = updated.astimezone(zone).date().isoformat()
+                except (KeyError, TypeError, ValueError):
+                    _LOGGER.warning("event=notifications.pickup_skipped reason=invalid_presence_time")
+                    continue
+                old = previous.get(slug)
+                old = old if isinstance(old, dict) else {}
+                notified_date = old.get("notified_date", "")
+                if status == "Picked up" and old and old.get("status") != "Picked up" and notified_date != day:
+                    ready.append({
+                        "id": f"pickup:{slug}:{day}", "pickup": True, "child_slugs": [slug],
+                        "children": [child.get("name") or slug],
+                        "check_out_time": child.get("check_out_time", ""),
+                        "exit_with": child.get("exit_with", ""),
+                    })
+                    notified_date = day
+                previous[slug] = {"status": status, "notified_date": notified_date}
+            store.set("notification_pickups", previous)
+            store.save()
+        selected = [(item, "pickup") for item in ready if (
+            settings["targets"] and "pickup" in settings["categories"]
+            and (not settings["children"] or item["child_slugs"][0] in settings["children"]))
+            or any(self.push.wants(device, item, "pickup") for device in devices)]
+        self._record(selected)
+        count = 0
+        if settings["targets"] and "pickup" in settings["categories"]:
+            for item in ready:
+                if settings["children"] and item["child_slugs"][0] not in settings["children"]:
+                    continue
+                for message in self._messages([(item, "pickup")], self.controller.config.public_url):
+                    self._enqueue(settings["targets"], message)
+                    count += 1
+        for item in ready:
+            for device in devices:
+                if self.push.wants(device, item, "pickup"):
+                    for message in self._messages([(item, "pickup")], "."):
+                        self._enqueue_push(device, message)
+                        count += 1
+        return count
+
     def observe(self, items: list[dict[str, Any]]) -> int:
         """Queue notifications for new items; returns how many were queued."""
         now = time.time()
@@ -471,7 +543,7 @@ class Notifier:
                 text = render(item, category, zone)
                 history.append({
                     "id": hashlib.sha256(f"{item['id']}|{stamp}|{len(history)}".encode()).hexdigest()[:16],
-                    "item_id": "" if category == "nap" else item["id"], "category": category,
+                    "item_id": "" if category in ("nap", "pickup") else item["id"], "category": category,
                     "title": text["title"], "message": text["message"], "sent_at": stamp,
                 })
             store.set(HISTORY_KEY, history[-HISTORY_LIMIT:])
@@ -484,7 +556,7 @@ class Notifier:
         entries, unread = [], 0
         for entry in reversed(store.get(HISTORY_KEY) or []):
             item = feed.get(entry.get("item_id"))
-            if entry["category"] == "nap" or item is None:
+            if entry["category"] in ("nap", "pickup") or item is None:
                 read = True
             elif "unread" in item:
                 read = not item["unread"] or entry["item_id"] in opened
@@ -502,6 +574,18 @@ class Notifier:
             opened = [i for i in (store.get(READ_KEY) or []) if i != item_id] + [item_id]
             store.set(READ_KEY, opened[-HISTORY_LIMIT * 2:])
             store.save()
+
+    def mark_all_read(self) -> dict[str, Any]:
+        with self.lock:
+            store = self.controller.store
+            item_ids = list(dict.fromkeys(
+                entry.get("item_id") for entry in store.get(HISTORY_KEY, [])
+                if isinstance(entry.get("item_id"), str) and entry["item_id"]
+            ))
+            opened = [item_id for item_id in (store.get(READ_KEY) or []) if item_id not in item_ids]
+            store.set(READ_KEY, (opened + item_ids)[-HISTORY_LIMIT * 2:])
+            store.save()
+        return self.history()
 
     def _messages(self, ready: list[tuple[dict[str, Any], str]], base: str) -> list[dict[str, str]]:
         if len(ready) > DIGEST_THRESHOLD:
@@ -680,6 +764,10 @@ def handle(controller: Any, method: str, path: str, value: Any = None) -> tuple[
                 raise ValueError("Supply an item id")
             notifier.mark_opened(value["id"])
             return 200, notifier.history()
+        if method == "POST" and path == "/api/notifications/read-all":
+            if value != {}:
+                raise ValueError("Supply an empty object")
+            return 200, notifier.mark_all_read()
         if method == "POST" and path == "/api/notifications":
             return 200, {"saved": True, **notifier.save(value)}
         if method == "POST" and path == "/api/notifications/test":

@@ -472,6 +472,7 @@ class AulaUIController:
         try:
             self.notifier.observe([item for item in items if item.get("content_type") != "Album"])
             self.notifier.observe_naps(presence)
+            self.notifier.observe_pickups(presence)
         except Exception as err:  # noqa: BLE001 - notifications must never break the feed
             _LOGGER.error("Notification check failed; the feed is unaffected: %s", describe(err))
 

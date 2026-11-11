@@ -186,6 +186,12 @@ def nap_presence(intervals, state="present", day="2026-10-26"):
              "updated_at": f"{day}T13:00:00+00:00", "sleep_intervals": intervals}]
 
 
+def pickup_presence(status, day="2026-10-26", state="away"):
+    return [{"child_slug": "alma", "name": "Alma", "state": state, "status": status,
+             "timezone": "Europe/Copenhagen", "updated_at": f"{day}T13:00:00+00:00",
+             "check_out_time": "15:31", "exit_with": "Alex"}]
+
+
 def test_nap_start_end_duration_dedup_and_restart(setup):
     controller, client, notifier = setup
     notifier.save({"targets": ["service:notify.mobile_app_lars_s_iphone"],
@@ -244,6 +250,48 @@ def test_naps_observed_while_disabled_do_not_replay_on_enable(setup):
     notifier.save({"targets": ["entity:notify.iphone"], "categories": ["nap"], "children": []})
     assert notifier.observe_naps(nap_presence([nap])) == 0
     assert not sent(client)
+
+
+def test_pickup_notifications_are_transitioned_deduplicated_and_formatted(setup):
+    controller, client, notifier = setup
+    notifier.save({"targets": ["service:notify.mobile_app_lars_s_iphone"],
+                   "categories": ["pickup"], "children": ["alma"]})
+    assert notifier.observe_pickups(pickup_presence("Unknown", state="unknown")) == 0
+    assert notifier.observe_pickups(pickup_presence("Present", state="present")) == 0
+    assert notifier.observe_pickups(pickup_presence("Picked up")) == 1
+    assert sent(client)[-1][2]["title"] == "Alma was picked up"
+    assert sent(client)[-1][2]["message"] == "Picked up at 15:31. Collected by Alex."
+    assert sent(client)[-1][2]["data"]["url"].endswith("/child/alma")
+    assert notifier.observe_pickups(pickup_presence("Picked up")) == 0
+    assert notifier.observe_pickups(pickup_presence("Present", state="present")) == 0
+    assert notifier.observe_pickups(pickup_presence("Picked up")) == 0
+    assert notifier.observe_pickups(pickup_presence("Present", day="2026-10-27", state="present")) == 0
+    assert notifier.observe_pickups(pickup_presence("Picked up", day="2026-10-27")) == 1
+    assert len(sent(client)) == 2
+    history = notifier.history()
+    pickup = next(entry for entry in history["items"] if entry["category"] == "pickup")
+    assert pickup["read"] is True and pickup["available"] is False
+    assert history["unread"] == 0
+
+
+def test_pickup_notifications_baseline_when_disabled_and_support_web_push(setup, monkeypatch):
+    _, client, notifier = setup
+    assert notifier.observe_pickups(pickup_presence("Present", state="present")) == 0
+    assert notifier.observe_pickups(pickup_presence("Picked up")) == 0
+    notifier.save({"targets": ["entity:notify.iphone"], "categories": ["pickup"], "children": []})
+    assert notifier.observe_pickups(pickup_presence("Picked up")) == 0
+    pushed = []
+    monkeypatch.setattr(notifier.push, "all", lambda: [
+        {"id": "pickup-device", "categories": ["pickup"], "children": ["alma"]},
+    ])
+    next_day = pickup_presence("Present", day="2026-10-27", state="present")
+    assert notifier.observe_pickups(next_day) == 0
+    next_day = pickup_presence("Picked up", day="2026-10-27")
+    monkeypatch.setattr(notifier, "_enqueue_push", lambda device, message: pushed.append((device, message)))
+    assert notifier.observe_pickups(next_day) == 2
+    assert len(sent(client)) == 1 and len(pushed) == 1
+    assert pushed[0][0]["id"] == "pickup-device"
+    assert pushed[0][1]["message"] == "Picked up at 15:31. Collected by Alex."
 
 
 def test_targets_list_entities_and_mobile_services(setup):
@@ -377,6 +425,9 @@ def test_http_endpoints_require_header_and_round_trip(setup):
         tested = requests.post(url + "/api/notifications/test", json={}, headers=headers, timeout=5)
         assert tested.status_code == 200 and tested.json() == {"sent": 1, "errors": []}
         assert sent(client)[-1][2]["title"] == "Aula test notification"
+        assert requests.post(url + "/api/notifications/read-all", json={}).status_code == 403
+        read_all = requests.post(url + "/api/notifications/read-all", json={}, headers=headers, timeout=5)
+        assert read_all.status_code == 200 and read_all.json()["unread"] == 0
     finally:
         service.shutdown()
         service.server_close()
@@ -451,6 +502,24 @@ def test_history_derives_read_state_and_naps_are_read(setup):
     status, result = handle(controller, "POST", "/api/notifications/read", {"id": "post:1"})
     assert status == 200 and result["unread"] == 0
     assert handle(controller, "POST", "/api/notifications/read", {"id": 5})[0] == 400
+
+
+def test_mark_all_read_marks_only_items_in_history(setup):
+    controller, _, notifier = setup
+    unread_post = post("post:1", unread=True)
+    unread_thread = {"id": "thread:1", "title": "Message", "content_type": "Message", "unread": True}
+    controller.store.set("feed", [unread_post, unread_thread])
+    controller.store.set(notifications.HISTORY_KEY, [
+        {"id": "one", "item_id": "post:1", "category": "post"},
+        {"id": "two", "item_id": "thread:1", "category": "message"},
+        {"id": "three", "item_id": "", "category": "pickup"},
+    ])
+    controller.store.set(notifications.READ_KEY, ["post:old"])
+    assert notifier.history()["unread"] == 2
+    status, result = handle(controller, "POST", "/api/notifications/read-all", {})
+    assert status == 200 and result["unread"] == 0
+    assert set(controller.store.get(notifications.READ_KEY)) == {"post:old", "post:1", "thread:1"}
+    assert handle(controller, "POST", "/api/notifications/read-all", {"extra": True})[0] == 400
 
 
 def test_panel_path_follows_supervisor_hostname():
