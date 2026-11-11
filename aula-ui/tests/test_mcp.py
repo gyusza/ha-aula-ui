@@ -54,6 +54,7 @@ def test_initialize_list_and_notifications(controller):
     assert rpc(endpoint, "initialize", {"protocolVersion": "2025-03-26"})["result"]["protocolVersion"] == "2025-03-26"
     names = [tool["name"] for tool in rpc(endpoint, "tools/list")["result"]["tools"]]
     assert "list_feed" in names and "report_sickness" not in names
+    assert "get_pickup_plan" in names and "set_pickup_plan" not in names
     assert endpoint.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
     assert rpc(endpoint, "nope")["error"]["code"] == -32601
     assert endpoint.handle("nonsense")["error"]["code"] == -32600
@@ -84,6 +85,20 @@ def test_feed_filtering_and_item_detail(controller):
     assert call(endpoint, "get_item", id="missing")["isError"]
     presence = json.loads(call(endpoint, "get_presence", child="Noah")["content"][0]["text"])
     assert presence[0]["status"] == "present"
+
+
+def test_pickup_tools_are_gated_and_forward_explicit_user_confirmation(controller):
+    from unittest.mock import Mock
+    endpoint = McpEndpoint(controller, Sick(), KEY, allow_writes=True)
+    endpoint.pickup_plans = Mock()
+    endpoint.pickup_plans.get.return_value = {"plans": [], "pickup_people": []}
+    endpoint.pickup_plans.set.return_value = {"confirmed": True}
+    assert not call(endpoint, "get_pickup_plan", child="Alma", date="2026-11-12").get("isError")
+    endpoint.pickup_plans.get.assert_called_once_with("alma", "2026-11-12")
+    assert not call(endpoint, "set_pickup_plan", child="Alma", date="2026-11-12", time="13:45",
+                    pickup_person="Alex", confirmed=True).get("isError")
+    endpoint.pickup_plans.set.assert_called_once_with("alma", "2026-11-12", "13:45", "Alex", True, None)
+    assert "set_pickup_plan" not in McpEndpoint(controller, Sick(), KEY).tools
 
 
 def test_unknown_tool_and_bad_arguments(controller):

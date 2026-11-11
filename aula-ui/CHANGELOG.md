@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.65
+
+- Add MCP `get_pickup_plan` and, when writes are enabled, `set_pickup_plan`.
+  Set a future pickup time and named pickup person for one date, with guardian
+  permissions, explicit user confirmation and read-back verification.
+- Preserve arrival time, notes and spare-time activities; never check a child
+  out or change a recurring schedule. Ambiguous institutions and unavailable
+  permissions fail explicitly. Document the recommended compact in-app UX.
+
 ## 1.9.64
 
 - Start direct Aula requests and login probes at API v25, retaining automatic

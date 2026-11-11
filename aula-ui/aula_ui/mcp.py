@@ -23,6 +23,7 @@ from . import __version__, gallery
 from .aula_api import AulaApiError, _call, fetch_thread_messages
 from .media import attachments, download_attachment
 from .messages import date_key
+from .pickup import PickupPlans
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ class McpEndpoint:
     def __init__(self, controller: Any, sick_days: Any, key: str, allow_writes: bool = False) -> None:
         self.controller = controller
         self.sick_days = sick_days
+        self.pickup_plans = PickupPlans(controller)
         self.key = key
         self.allow_writes = allow_writes
         self._lock = threading.Lock()
@@ -305,6 +307,14 @@ class McpEndpoint:
         feed = self._feed()
         return self.sick_days.report(self._slug(feed, child), day, sick)
 
+    def _pickup_plan(self, args: dict[str, Any]) -> Any:
+        return self.pickup_plans.get(self._slug(self._feed(), args.get("child")), args.get("date"))
+
+    def _set_pickup_plan(self, args: dict[str, Any]) -> Any:
+        return self.pickup_plans.set(
+            self._slug(self._feed(), args.get("child")), args.get("date"), args.get("time"),
+            args.get("pickup_person"), args.get("confirmed", False), args.get("institution_profile_id"))
+
     def _tool_table(self) -> dict[str, tuple[dict[str, Any], Any]]:
         child = {"type": "string", "description": "Child name or slug"}
         read = {"readOnlyHint": True, "openWorldHint": False}
@@ -330,6 +340,10 @@ class McpEndpoint:
             tool("upcoming_events", "Calendar events, weekplan entries and homework for the coming days, soonest first.", {
                 "child": child, "days": {"type": "integer", "minimum": 1, "maximum": 90}}, self._upcoming),
             tool("get_presence", "Today's presence/check-in status per child.", {"child": child}, self._presence),
+            tool("get_pickup_plan", "Read the date-specific pickup plan, guardian edit permissions and pickup people. "
+                 "Read before setting a plan; times use the child's local timezone.", {
+                     "child": child, "date": {"type": "string", "description": "YYYY-MM-DD; today through next 90 days"}},
+                 self._pickup_plan, ("child", "date")),
             tool("get_attachment", "Fetch an attachment of a post or message (returned inline, max 5 MB).", {
                 "id": {"type": "string"}, "index": {"type": "integer", "minimum": 0},
                 "message": {"type": "string", "description": "Message id inside a thread"}}, self._attachment, ("id", "index")),
@@ -342,6 +356,17 @@ class McpEndpoint:
                  annotations={"readOnlyHint": False, "idempotentHint": True, "openWorldHint": False}),
         ]
         if self.allow_writes:
+            tools.append(tool(
+                "set_pickup_plan", "Set who picks up a child and at what future local time on one date in Aula. "
+                "Not an actual check-out; never changes a recurring schedule. Read get_pickup_plan first. "
+                "Confirm the child, date, time and explicit pickup person's name with the user; never infer 'I' from the shared MCP key.", {
+                    "child": child, "date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "time": {"type": "string", "pattern": r"^\d{2}:\d{2}$", "description": "HH:MM in child's local timezone"},
+                    "pickup_person": {"type": "string", "minLength": 2, "maxLength": 100},
+                    "confirmed": {"type": "boolean", "description": "True only after user confirms the exact plan"},
+                    "institution_profile_id": {"type": "string", "description": "Choose from get_pickup_plan if multiple institutions are editable"}},
+                self._set_pickup_plan, ("child", "date", "time", "pickup_person", "confirmed"),
+                {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True}))
             tools.append(tool(
                 "report_sickness", "Report or withdraw a child's sickness for today in Aula, notifying the daycare/SFO. "
                 "Confirm with the user first.", {

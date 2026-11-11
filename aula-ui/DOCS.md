@@ -366,6 +366,32 @@ setting `mcp_key` in the add-on options. Treat the URL as a password. For a
 stable external URL, also configure `public_url` and Cloudflare Access as
 described in `CLOUDFLARE_ACCESS.md`.
 
+MCP **get_pickup_plan** reads a child's plan for an explicit date (today through
+90 days ahead), guardian editing permissions, and Aula's pickup people.
+With `mcp_allow_writes: true`, **set_pickup_plan** accepts `child`, `date`
+(`YYYY-MM-DD`), `time` (`HH:MM` in the configured timezone), `pickup_person`
+and `confirmed: true`. Read the plan first and confirm the exact change with
+the user. Never infer who "I" means from the shared MCP key; use an explicit
+pickup name. If multiple institutions allow editing, supply
+`institution_profile_id` from the read result.
+
+Pickup planning uses `presence.updatePresenceTemplate`, not actual check-out.
+It affects one date, leaves the recurring schedule alone, preserves arrival
+time, notes and spare-time activity, and reports success only after re-reading
+the saved values from Aula. Missing permissions, past times, ambiguity,
+absence/closed-day flags and unreadable templates fail explicitly. It does not
+create or delete saved pickup people. No live pickup writes are made merely
+by reading or testing the connector.
+
+**Recommended app UX (not implemented):** a small **Pickup 13:45 · Alex**
+row below each child's presence status, or **Set pickup** when unset. Tap to
+open a bottom sheet with Today/Tomorrow/date selection, a time picker and
+Aula's pickup-person dropdown with an explicit custom-name option. Show the
+child, date, time and person in a final confirmation; retain the old row until
+Aula confirms the change. Disable editing with a clear reason when Aula does
+not permit it. Keep pickup actions beside presence, not in Settings or a new
+navigation destination.
+
 Each child's display name, school/daycare type and subscription inclusion are
 stored on the add-on and shared across devices. Display names do not change
 source identity matching. Set **timezone** once in Home Assistant's
@@ -576,7 +602,7 @@ AI Task.
 | `access_aud` | empty | Application Audience (AUD) tag of the Access app. |
 | `access_allowed_emails` | empty | Emails allowed through public access (see CLOUDFLARE_ACCESS.md). |
 | `mcp_key` | empty | Enables the MCP endpoint `/mcp/<key>` (32-128 chars of `A-Za-z0-9_-`). Empty disables it. |
-| `mcp_allow_writes` | `false` | Adds the `report_sickness` MCP tool. |
+| `mcp_allow_writes` | `false` | Adds `report_sickness` and `set_pickup_plan` MCP tools; both require user confirmation. |
 | `public_url` | empty | Optional public base URL (e.g. `https://aula.example.com`) used for notification deep links and the calendar subscription URL. When empty, notifications open the Home Assistant sidebar panel and the calendar URL is built from the address you opened the app with. |
 
 Children are discovered after account login; their names, institution type and
